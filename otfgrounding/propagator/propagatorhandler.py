@@ -6,8 +6,6 @@ from otfgrounding import util
 from otfgrounding.propagator.propagator import Propagator
 from otfgrounding.propagator.propagator import Domain
 
-theory_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../theory/untimed_theory.lp"))
-
 class Handler:
 
 	def __init__(self, cfile) -> None:
