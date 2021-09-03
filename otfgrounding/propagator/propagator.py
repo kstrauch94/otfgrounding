@@ -116,7 +116,6 @@ class Propagator:
 		for atom in pre_literals:
 			if any(c in ["=", ">", "<"] for c in atom):
 				dc = DomConstraint(atom)
-				dc.test({"D": 2, "D2": 1, "T": 10, "T2": 4})
 				self.cons.append(dc)
 			else:
 				s = re.search(atom_name_re, atom)
