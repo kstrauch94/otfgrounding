@@ -22,7 +22,7 @@ class Handler:
 			for line in f.readlines():
 				p = Propagator(line)
 
-		#prg.register_propagator(self.propagator)
+				prg.register_propagator(p)
 		
 
 	def __str__(self) -> str:

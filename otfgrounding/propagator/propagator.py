@@ -4,6 +4,8 @@ from typing import Dict, List, Any, Set
 from collections import defaultdict
 
 import otfgrounding.util as util
+from otfgrounding.data import AtomMap
+
 import re
 
 # split on comma followed by whitespace except between ""
@@ -21,6 +23,24 @@ class Atom:
 		self.variables = variables
 		self.arity = len(variables)
 
+	def substitution(self, args):
+		subs = {}
+		for i in range(self.arity):
+			v = self.variables[i]
+			arg = args[i]
+			subs[v] = arg
+
+		return subs
+
+	def partial_sub(self, variables):
+		subs = {}
+		for i in range(self.arity):
+			v = self.variables[i]
+			arg = args[i]
+			subs[v] = arg
+
+		return arg
+
 	def __str__(self):
 		return f"{self.name}{*self.variables,}".replace("'","")
 
@@ -34,7 +54,7 @@ class DomConstraint:
 	separate_only_vars_re = r"\W+"
 
 	def __init__(self, dom_c):
-		self.dom_c = dom_c		
+		self.dom_c = dom_c
 
 		self.separate()
 
@@ -70,12 +90,16 @@ class DomConstraint:
 			if i not in variables:
 				print(f"constraint variable {i} is not in the variables dictionary {variables}")
 				raise Exception
+			if variables[i] is None:
+				print(f"variable {i} has a None value. Can not continue.")
+				return None
 		
 		l = self.test_expression_side(self.left, variables)
 		r = self.test_expression_side(self.right, variables)
 		
 		result = self.test_comparator(l, r)
 
+		return result
 
 	def test_comparator(self, l, r):
 		if self.comparator == "=":
@@ -107,7 +131,7 @@ class Propagator:
 	def __init__(self, line):
 		pre_literals = re.split(split_cons_re, line.replace(":-","").strip()[:-1])
 		
-		self.atoms = []
+		self.atoms = {}
 		
 		self.all_vars = set()
 
@@ -125,28 +149,105 @@ class Propagator:
 				
 				atom = Atom(name, variables)
 				
-				self.atoms.append(atom)
+				self.atoms[atom.name, atom.arity] = atom
 				self.all_vars.update(atom.variables)
 
 		print(self.atoms)
 		print(self.all_vars)
 
+		self.var_assignment = {}
+		for v in self.all_vars:
+			self.var_assignment[v] = None
+
+
+	def ordering(self, atoms):
+		for atom in atoms:
+			pass
+	
+	def order_with_starter(self, starter, rest):
+		if rest == []:
+			return [starter]
+
+		counts = {}
+		for atom in rest:
+			for var in atom.variables:
+				if var not in counts:
+					counts[var] = 0
+				counts[var] += 1
+
+		for var in starter.variables:
+			if var in counts:
+				counts[var] -= 1
+
+
+		max_atom = None
+		max_val = None
+		for atom in rest:
+			val = 0
+			for v in atom.variables:
+				val += counts[v]
+			
+			if max_val is None:
+				max_val = val
+				max_atom = atom
+			
+			else:
+				if val > max_val:
+					max_val = val
+					max_atom = atom
+			
+		new_rest = [a for a in rest if a != max_atom]
+		return [max_atom] + self.order_with_start(max_atom, new_rest)
+
 	@util.Timer("Prop_init")
 	def init(self, init):
-		pass
+		import pprint
+		pp = pprint.PrettyPrinter()
+
+		lits = set()
+
+		for atom in self.atoms:
+			name, arity = atom
+			for symb in init.symbolic_atoms.by_signature(name, arity):
+				lit = init.solver_literal(symb.literal)
+				AtomMap.add(symb.symbol, lit)
+				lits.add(lit)
+			
+		for lit in lits:
+			init.add_watch(lit)
+		
+		pp.pprint(AtomMap.atom_2_lit)
+		#print(AtomMap.lit_2_atom)
 
 	@util.Count("Propagation")
 	@util.Timer("Propagation")
 	def propagate(self, control, changes):
-		pass
+		for lit in changes:
+			for atom in AtomMap.lit_2_atom[lit]:
+				self.prop(control, atom, lit)
 
 	
+	def prop(self, control, atom, lit):
+		self.reset_assignment()
+		name, arity, args = atom
+		if (name, arity) not in self.atoms:
+			return
+
+		self.var_assignment.update(self.atoms[name, arity].substitution(args))
+
+		ng = [lit]
+		found_unassigned = False
+
+		for atom in self.atoms:
+			# if the atom is not the one we started with:
+			if atom != (name, arity):
+
+	def reset_assignment(self):
+		for v in self.var_assignment:
+			self.var_assignment[v] = None
+
 	@util.Count("check")
 	@util.Timer("check")
 	def check(self, control):
 		pass
 
-class Domain:
-
-	def __init__(self, atom):
-		print(atom)
