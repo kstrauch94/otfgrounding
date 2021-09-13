@@ -4,7 +4,6 @@ import os
 from otfgrounding import util
 
 from otfgrounding.propagator.propagator import Propagator
-from otfgrounding.propagator.propagator import Domain
 
 class Handler:
 
