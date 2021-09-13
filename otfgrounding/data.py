@@ -13,7 +13,7 @@ class AtomMap:
 
 	@classmethod
 	def add(cls, symbol, lit):
-		print(symbol)
+		#print(symbol)
 		name =  symbol.name
 		args = [str(a) for a in symbol.arguments]
 		arity = len(args)
@@ -27,14 +27,17 @@ class AtomMap:
 
 		last = cls.atom_2_lit[name, arity]
 		for i in range(0, arity):
+
+			str_arg = str(args[i])
+			
 			if i == arity-1:
-				last[args[i]] = lit
+				last[str_arg] = lit
 			
 			else:
-				if args[i] not in last:
-					last[args[i]] = {}
+				if str_arg not in last:
+					last[str_arg] = {}
 			
-			last = last[args[i]]
+			last = last[str_arg]
 
 
 	@classmethod
