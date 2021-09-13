@@ -1,99 +1,104 @@
 import argparse
 
-parser = argparse.ArgumentParser()
+from clingo import parse_term
+from clingo.ast import Variable, parse_string
+from clingox.ast import ast_to_dict
 
-parser.add_argument("constraint-file", help="File where the constraints are located.")
-
-args = parser.parse_args()
-
-header = """
 from collections import namedtuple
 
-Class ATOM_VALS:
-    
-    true = "true"
-    false = "False"
-    unassigned = "None"
-    not_grounded = "not_grounded"
+TYPE = {"ATOM": "atom", "DOM_COMPARISON": "dom_comparison"}
 
-"""
 
-propapgator_init = """
+def inspect_constraint(ast):
 
-class Propagator:
+	dict_ast = ast_to_dict(ast)
 
-    def __init__(self):
-        self.var_assignments = {assignment}
-"""
+	body_parts = []
 
-propagator_init_func = """
-    @util.Timer("Prop_init")
-	def init(self, init):
+	if dict_ast["ast_type"] == "Rule":
+		for body in dict_ast["body"]:
+			#print("BODDD", body)
+			if body["atom"]["ast_type"] == "Comparison":
+				# then its a comparison literal
+				args = inspect_comparison(body)
 
-        lits = set()
+				body_parts.append((TYPE["DOM_COMPARISON"], args))
 
-		for atom in {atom_list}:
-			name, arity = atom
-			for symb in init.symbolic_atoms.by_signature(name, arity):
-				lit = init.solver_literal(symb.literal)
-				AtomMap.add(symb.symbol, lit)
-				lits.add(lit)
+			elif body["atom"]["ast_type"] == "SymbolicAtom":
+				
+				args = inspect_ast(body["atom"]["symbol"])
+				
+				body_parts.append((TYPE["ATOM"], args))
+
+	import pprint
+	pp = pprint.PrettyPrinter()
+
+	for bp in body_parts:
+		pp.pprint(bp)
+
+
+def inspect_ast(dict_ast):
+	if dict_ast["ast_type"] == "Variable":
+		return dict_ast["name"]
+	
+	elif dict_ast["ast_type"] == "BinaryOperation":
+		return inspect_binary_op(dict_ast)
+
+	elif dict_ast["ast_type"] == "SymbolicTerm":
+		#this is a string even if it is a "number"
+		return dict_ast["symbol"]
+
+	elif dict_ast["ast_type"] == "Function":
+		name = dict_ast["name"]
+		args = []
+		for arg in dict_ast["arguments"]:
+			args.append(inspect_ast(arg))
+		
+		return name, args
+
+	print(dict_ast)
+	print("ERROR on the inspect_ast function!!")
+	raise
+
+
+bin_op = {4: "-"}
+def inspect_binary_op(dict_ast):
+	operation = []
+	operator = dict_ast["operator_type"]
+	operator = bin_op[operator]
+
+	left = inspect_ast(dict_ast["left"])
+	right = inspect_ast(dict_ast["right"])
+
+	return left, operator, right
+
+comp_op = {5: "="}
+def inspect_comparison(dict_ast):
+	left = inspect_ast(dict_ast["atom"]["left"])
+	right = inspect_ast(dict_ast["atom"]["right"])
+
+	operator = dict_ast["atom"]["comparison"]
+	operator = comp_op[operator]
+
+	return left, operator, right
+
+
+def create_propagator_file(constraint):
+	
+	parse_string(constraint, inspect_constraint)
+
+
+def compile():
+	parser = argparse.ArgumentParser()
+
+	parser.add_argument("constraints", help="File where the constraints are located.")
+
+	args = parser.parse_args()
+	
+	with open(args.constraints, "r") as _f:
+		for line in _f.readlines():
+			create_propagator_file(line)
 			
-		for lit in lits:
-			init.add_watch(lit)
-"""
-
-propagator_prop_func = """
-    @util.Count("Propagation")
-	@util.Timer("Propagation")
-	def propagate(self, control, changes):
-		for lit in changes:
-			for atom in AtomMap.lit_2_atom[lit]:
-				self.prop(control, atom, lit)
-
-
-    def prop(self, control, atom, lit)
-
-        ng = [lit]
-        found_unassigned = False
-        assignments = self.var_assignments.copy()
-
-        name, arity, args = atom
-
-        {if_blocks}
-"""
-
-propagator_if_outer_block = """
-        if (name, arity) == ({name}, {arity}):
-            
-            {inner_blocks}
-
-"""
-
-propagator_if_inner_block = """
-            for {atom} in {candidates}:
-                res = self.test_candidate(atom, assignments)
-                if res == ATOMVALS.false:
-                    continue
-
-                elif res == ATOMVALS.unassigned:
-                    if found_unassigned == True:
-                        continue
-
-                    found_unassigned = True
-                    lit = AtomMap.grab_lit({atom})
-                    ng.append(lit)
-
-                
-                elif res == ATOMVALS.True:
-                    lit = AtomMap.grab_lit({atom})
-                    ng.append(lit)
-
-"""
-
-propagator_if_end_block = """
-
-"""
 
 if __name__ == "__main__":
-    compile()
+	compile()
