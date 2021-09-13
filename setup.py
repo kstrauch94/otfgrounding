@@ -12,6 +12,7 @@ setup(
     entry_points = {
         'console_scripts': [
             'otfgrounding=otfgrounding:main',
+            'otfcompile=otfgrounding.compile_propagators:compile'
         ]
     }
 )
