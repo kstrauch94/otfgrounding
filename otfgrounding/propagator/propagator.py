@@ -62,8 +62,8 @@ class DomConstraint:
 		
 		self.vars = list(filter(lambda s: not s.isdigit(), self.vars))
 
-		print(self.left, self.comparator, self.right)
-		print(f"constraint variables: {self.vars}")
+		print(self)
+		#print(f"constraint variables: {self.vars}")
 
 	def separate(self):
 
@@ -71,12 +71,12 @@ class DomConstraint:
 
 		self.left = []
 		self.right = []
-		self.comparator = None
+		self.operator = None
 
 		left = True
 		for i in separated:
 			if any(c in ["=", ">", "<"] for c in i):
-				self.comparator = i.strip()
+				self.operator = i.strip()
 				left = False
 				continue
 
@@ -97,22 +97,22 @@ class DomConstraint:
 		l = self.test_expression_side(self.left, variables)
 		r = self.test_expression_side(self.right, variables)
 		
-		result = self.test_comparator(l, r)
+		result = self.test_operator(l, r)
 
 		return result
 
-	def test_comparator(self, l, r):
-		if self.comparator == "=":
+	def test_operator(self, l, r):
+		if self.operator == "=":
 			return l == r
-		if self.comparator == "!=":
+		if self.operator == "!=":
 			return l != r
-		if self.comparator == ">":
+		if self.operator == ">":
 			return l > r
-		if self.comparator == ">=":
+		if self.operator == ">=":
 			return l >= r
-		if self.comparator == "<":
+		if self.operator == "<":
 			return l < r
-		if self.comparator == "<=":
+		if self.operator == "<=":
 			return l <= r
 
 	def test_expression_side(self, side, variables):
@@ -124,13 +124,17 @@ class DomConstraint:
 				new_side.append(i)
 		
 		return eval("".join(new_side))
+
+	def __str__(self):
+		return str(self.left) + str(self.operator) + str(self.right)
 		
+
 
 class Propagator:
 
 	def __init__(self, line):
 		pre_literals = re.split(split_cons_re, line.replace(":-","").strip()[:-1])
-		
+
 		self.atoms = {}
 		
 		self.all_vars = set()
@@ -201,8 +205,7 @@ class Propagator:
 
 	@util.Timer("Prop_init")
 	def init(self, init):
-		import pprint
-		pp = pprint.PrettyPrinter()
+
 
 		lits = set()
 
@@ -215,8 +218,10 @@ class Propagator:
 			
 		for lit in lits:
 			init.add_watch(lit)
-		
-		pp.pprint(AtomMap.atom_2_lit)
+
+		#import pprint
+		#pp = pprint.PrettyPrinter()
+		#pp.pprint(AtomMap.atom_2_lit)
 		#print(AtomMap.lit_2_atom)
 
 	@util.Count("Propagation")
@@ -241,6 +246,7 @@ class Propagator:
 		for atom in self.atoms:
 			# if the atom is not the one we started with:
 			if atom != (name, arity):
+				pass
 
 	def reset_assignment(self):
 		for v in self.var_assignment:
