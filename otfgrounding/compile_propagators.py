@@ -9,6 +9,69 @@ from collections import namedtuple
 TYPE = {"ATOM": "atom", "DOM_COMPARISON": "dom_comparison"}
 
 
+class Function:
+
+	def __init__(self, name, args):
+		self.name = name
+		self.args = args
+
+	def __str__(self):
+		arg_str = []
+		for arg in self.args:
+			arg_str.append(str(arg))
+		
+		return f"{self.name}({','.join(arg_str)})"
+
+	@property
+	def vars(self):
+		v = []
+		for arg in self.args:
+			v += arg.vars
+
+		return v
+
+	def substitute(self, subs):
+		# do a function like this on everything!
+		...
+
+class Variable:
+
+	def __init__(self, var):
+		self.var = var
+
+	def __str__(self):
+		return str(self.var)
+
+	@property
+	def vars(self):
+		return [str(self)]
+
+class Term:
+
+	def __init__(self, term):
+		self.term = term
+
+	def __str__(self):
+		return str(self.term)
+
+	@property
+	def vars(self):
+		return []
+
+class BinaryOp:
+
+	def __init__(self, left, op, right):
+		self.left = left
+		self.op = op
+		self.right = right
+
+	def __str__(self):
+		return str(self.left) + str(self.op) + str(self.right)
+
+	@property
+	def vars(self):
+		return self.left.vars + self.right.vars
+
 def inspect_constraint(ast):
 
 	dict_ast = ast_to_dict(ast)
@@ -26,27 +89,30 @@ def inspect_constraint(ast):
 
 			elif body["atom"]["ast_type"] == "SymbolicAtom":
 				
-				args = inspect_ast(body["atom"]["symbol"])
+				atom = inspect_ast(body["atom"]["symbol"])
 				
-				body_parts.append((TYPE["ATOM"], args))
+				body_parts.append((TYPE["ATOM"], atom))
 
-	import pprint
-	pp = pprint.PrettyPrinter()
+				print("the atom", atom)
+				print("the vars", atom.vars)
 
-	for bp in body_parts:
-		pp.pprint(bp)
+	#import pprint
+	#pp = pprint.PrettyPrinter()
+
+	#for bp in body_parts:
+	#	pp.pprint(bp)
 
 
 def inspect_ast(dict_ast):
 	if dict_ast["ast_type"] == "Variable":
-		return dict_ast["name"]
+		return Variable(dict_ast["name"])
 	
 	elif dict_ast["ast_type"] == "BinaryOperation":
-		return inspect_binary_op(dict_ast)
+		return BinaryOp(*inspect_binary_op(dict_ast))
 
 	elif dict_ast["ast_type"] == "SymbolicTerm":
 		#this is a string even if it is a "number"
-		return dict_ast["symbol"]
+		return Term(dict_ast["symbol"])
 
 	elif dict_ast["ast_type"] == "Function":
 		name = dict_ast["name"]
@@ -54,7 +120,7 @@ def inspect_ast(dict_ast):
 		for arg in dict_ast["arguments"]:
 			args.append(inspect_ast(arg))
 		
-		return name, args
+		return Function(name, args)
 
 	print(dict_ast)
 	print("ERROR on the inspect_ast function!!")
