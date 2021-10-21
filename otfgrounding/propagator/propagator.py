@@ -7,7 +7,10 @@ from collections import defaultdict
 import otfgrounding.util as util
 from otfgrounding.data import AtomMap
 from otfgrounding.data import BodyType
+from otfgrounding.data import VarToAtom
+from otfgrounding.data import AtomTypes
 
+import parse
 
 import re
 
@@ -263,25 +266,46 @@ class Propagator:
 class PropagatorAST:
 
 	def __init__(self, body_parts):
+
+		self.var_to_atom = VarToAtom()
+
+		self.atom_types = AtomTypes()
+
 		self.body_parts = body_parts
 
 		self.signatures = set()
 
-		for atom in self.body_parts[BodyType.pos_atom]:
-			self.signatures.add((1, atom.name, atom.arity))
+		for i, atom in enumerate(self.body_parts[BodyType.pos_atom]):
+			self.signatures.add((1, atom))
 
-		for atom in self.body_parts[BodyType.neg_atom]:
-			self.signatures.add((-1, atom.name, atom.arity))
+			self.atom_types.add(atom.name, atom.arity)
+
+		for i, atom in enumerate(self.body_parts[BodyType.neg_atom], start=i+1):
+			self.signatures.add((-1, atom))
+			
+			self.atom_types.add(atom.name, atom.arity)
 
 	def init(self, init):
 		lits = set()
 
-		for sign, name, arity in self.signatures:
+		for sign, atom in self.signatures:
+			name, arity = atom.name, atom.arity
+			atom_type = self.atom_types.get_type(name, arity)
+
+			parse_str = str(atom)
+
 			for atom in init.symbolic_atoms.by_signature(name, arity):
 
 				lit = init.solver_literal(atom.literal) * sign
 				AtomMap.add(atom.symbol, lit)
 				lits.add(lit)
+
+				symb_str = str(atom.symbol)
+
+				print(symb_str, parse_str)
+				self.var_to_atom.add_atom(atom_type, symb_str, parse.parse(parse_str, symb_str))
+			
+			print(self.var_to_atom.atoms_by_var)
 
 		for lit in lits:
 			init.add_watch(lit)

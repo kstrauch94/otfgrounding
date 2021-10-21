@@ -8,14 +8,52 @@ class BodyType(Enum):
 	neg_atom = -1
 	dom_comparison = 5
 
+
+class AtomTypes:
+
+	def __init__(self):
+		self.atom_to_type = {}
+
+		self.type_count = 0
+
+	def add(self, name, arity):
+
+		if (name, arity) not in self.atom_to_type:
+			self.atom_to_type[name, arity] = self.type_count
+
+			self.type_count += 1
+
+	def get_type(self, name, arity):
+		return self.atom_to_type[name, arity]
+
+class VarToAtom:
+
+	def __init__(self):
+		self.vars_to_atom = {}
+
+	
+	def add_atom(self, atom_type, atom, vars_vals):
+
+		for v in vars_vals:
+			if v not in self.vars_to_atom:
+				self.vars_to_atom[v] = {}
+
+			if (atom_type, vars_vals[v]) not in self.vars_to_atom[v]:
+				self.vars_to_atom[v][atom_type, vars_vals[v]] = set()
+
+			self.vars_to_atom[v][atom_type, vars_vals[v]].add(atom)
+	
+	def atoms_by_var(self, atom_type, var, val):
+		return self.vars_to_atom[var][atom_type, val]
+
+
+
 class AtomMap:
 
 	lit_2_atom = {}
 
 	atom_2_lit = {}
 
-	def __init__(self):
-		...
 
 	@classmethod
 	def add(cls, symbol, lit):
