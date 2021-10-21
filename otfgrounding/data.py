@@ -1,9 +1,15 @@
+from enum import Enum
 from collections import namedtuple
 
 g_atom = namedtuple("g_atom", ["name", "arity", "args"])
 
+class BodyType(Enum):
+	pos_atom = 1
+	neg_atom = -1
+	dom_comparison = 5
+
 class AtomMap:
-	
+
 	lit_2_atom = {}
 
 	atom_2_lit = {}
@@ -29,15 +35,22 @@ class AtomMap:
 		for i in range(0, arity):
 
 			str_arg = str(args[i])
-			
+
 			if i == arity-1:
 				last[str_arg] = lit
-			
+
 			else:
 				if str_arg not in last:
 					last[str_arg] = {}
-			
+
 			last = last[str_arg]
+
+	@classmethod
+	def add_by_var(cls, symbol, lit, vars):
+		name =  symbol.name
+		args = [str(a) for a in symbol.arguments]
+		arity = len(args)
+
 
 
 	@classmethod

@@ -4,6 +4,13 @@ import os
 from otfgrounding import util
 
 from otfgrounding.propagator.propagator import Propagator
+from otfgrounding.propagator.propagator import PropagatorAST
+
+
+from clingo.ast import parse_string
+
+from otfgrounding.inspect_ast import ConstraintInspector
+
 
 class Handler:
 
@@ -19,10 +26,13 @@ class Handler:
 
 		with open(self.cfile, "r") as f:
 			for line in f.readlines():
-				p = Propagator(line)
+				c_inspector = ConstraintInspector()
+				parse_string(line, c_inspector.inspect_constraint)
+
+				p = PropagatorAST(c_inspector.body_parts)
 
 				prg.register_propagator(p)
-		
+
 
 	def __str__(self) -> str:
 		return self.__class__.__name__

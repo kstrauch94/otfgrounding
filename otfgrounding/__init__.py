@@ -70,6 +70,5 @@ def main():
 	setup_logger()
 	sys.exit(int(clingo.clingo_main(Application(), sys.argv[1:])))
 
-
 if __name__ == "__main__":
 	main()

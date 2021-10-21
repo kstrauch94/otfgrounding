@@ -1,10 +1,13 @@
 from clingo import parse_term
+from clingo import ast
 
 from typing import Dict, List, Any, Set
 from collections import defaultdict
 
 import otfgrounding.util as util
 from otfgrounding.data import AtomMap
+from otfgrounding.data import BodyType
+
 
 import re
 
@@ -50,7 +53,7 @@ class Atom:
 class DomConstraint:
 
 	separate_re = r"(\W+)"
-	
+
 	separate_only_vars_re = r"\W+"
 
 	def __init__(self, dom_c):
@@ -59,7 +62,7 @@ class DomConstraint:
 		self.separate()
 
 		self.vars = re.split(DomConstraint.separate_only_vars_re, self.dom_c)
-		
+
 		self.vars = list(filter(lambda s: not s.isdigit(), self.vars))
 
 		print(self)
@@ -93,10 +96,10 @@ class DomConstraint:
 			if variables[i] is None:
 				print(f"variable {i} has a None value. Can not continue.")
 				return None
-		
+
 		l = self.test_expression_side(self.left, variables)
 		r = self.test_expression_side(self.right, variables)
-		
+
 		result = self.test_operator(l, r)
 
 		return result
@@ -122,13 +125,11 @@ class DomConstraint:
 				new_side.append(str(variables[i]))
 			else:
 				new_side.append(i)
-		
+
 		return eval("".join(new_side))
 
 	def __str__(self):
 		return str(self.left) + str(self.operator) + str(self.right)
-		
-
 
 class Propagator:
 
@@ -136,7 +137,7 @@ class Propagator:
 		pre_literals = re.split(split_cons_re, line.replace(":-","").strip()[:-1])
 
 		self.atoms = {}
-		
+
 		self.all_vars = set()
 
 		self.cons = []
@@ -150,9 +151,9 @@ class Propagator:
 				name = s.group("name")
 
 				variables = re.findall(atom_params_re, atom)
-				
+
 				atom = Atom(name, variables)
-				
+
 				self.atoms[atom.name, atom.arity] = atom
 				self.all_vars.update(atom.variables)
 
@@ -167,7 +168,7 @@ class Propagator:
 	def ordering(self, atoms):
 		for atom in atoms:
 			pass
-	
+
 	def order_with_starter(self, starter, rest):
 		if rest == []:
 			return [starter]
@@ -190,16 +191,16 @@ class Propagator:
 			val = 0
 			for v in atom.variables:
 				val += counts[v]
-			
+
 			if max_val is None:
 				max_val = val
 				max_atom = atom
-			
+
 			else:
 				if val > max_val:
 					max_val = val
 					max_atom = atom
-			
+
 		new_rest = [a for a in rest if a != max_atom]
 		return [max_atom] + self.order_with_start(max_atom, new_rest)
 
@@ -215,14 +216,16 @@ class Propagator:
 				lit = init.solver_literal(symb.literal)
 				AtomMap.add(symb.symbol, lit)
 				lits.add(lit)
-			
+
 		for lit in lits:
 			init.add_watch(lit)
 
-		#import pprint
-		#pp = pprint.PrettyPrinter()
-		#pp.pprint(AtomMap.atom_2_lit)
-		#print(AtomMap.lit_2_atom)
+		import pprint
+		pp = pprint.PrettyPrinter()
+		print("a2l")
+		pp.pprint(AtomMap.atom_2_lit)
+		print("l2a")
+		pp.pprint(AtomMap.lit_2_atom)
 
 	@util.Count("Propagation")
 	@util.Timer("Propagation")
@@ -231,7 +234,7 @@ class Propagator:
 			for atom in AtomMap.lit_2_atom[lit]:
 				self.prop(control, atom, lit)
 
-	
+
 	def prop(self, control, atom, lit):
 		self.reset_assignment()
 		name, arity, args = atom
@@ -257,3 +260,35 @@ class Propagator:
 	def check(self, control):
 		pass
 
+class PropagatorAST:
+
+	def __init__(self, body_parts):
+		self.body_parts = body_parts
+
+		self.signatures = set()
+
+		for atom in self.body_parts[BodyType.pos_atom]:
+			self.signatures.add((1, atom.name, atom.arity))
+
+		for atom in self.body_parts[BodyType.neg_atom]:
+			self.signatures.add((-1, atom.name, atom.arity))
+
+	def init(self, init):
+		lits = set()
+
+		for sign, name, arity in self.signatures:
+			for atom in init.symbolic_atoms.by_signature(name, arity):
+
+				lit = init.solver_literal(atom.literal) * sign
+				AtomMap.add(atom.symbol, lit)
+				lits.add(lit)
+
+		for lit in lits:
+			init.add_watch(lit)
+
+		import pprint
+		pp = pprint.PrettyPrinter()
+		print("a2l")
+		pp.pprint(AtomMap.atom_2_lit)
+		print("l2a")
+		pp.pprint(AtomMap.lit_2_atom)
