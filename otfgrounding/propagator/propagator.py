@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Set
 from collections import defaultdict
 
 import otfgrounding.util as util
-from otfgrounding.data import AtomMap
+from otfgrounding.data import AtomMapping, AtomMap
 from otfgrounding.data import BodyType
 from otfgrounding.data import VarToAtom
 from otfgrounding.data import AtomTypes
@@ -200,7 +200,7 @@ class Propagator:
 				max_atom = atom
 
 			else:
-				if val > max_val:
+				if val < max_val:
 					max_val = val
 					max_atom = atom
 
@@ -275,6 +275,8 @@ class PropagatorAST:
 
 		self.signatures = set()
 
+		self.ground_orders = {}
+
 		for i, atom in enumerate(self.body_parts[BodyType.pos_atom]):
 			self.signatures.add((1, atom))
 
@@ -282,10 +284,93 @@ class PropagatorAST:
 
 		for i, atom in enumerate(self.body_parts[BodyType.neg_atom], start=i+1):
 			self.signatures.add((-1, atom))
-			
+
 			self.atom_types.add(atom.name, atom.arity)
 
+		all_atoms = self.body_parts[BodyType.pos_atom] + self.body_parts[BodyType.neg_atom]
+
+		for atom in all_atoms:
+			self.ground_orders[atom.name, tuple(atom.vars)] = self.slot_comparisons(self.order_with_starter(atom, [a for a in all_atoms if a != atom]),
+																					self.body_parts[BodyType.dom_comparison],
+																					atom.vars)
+
+		for a, o in self.ground_orders.items():
+			print(a,o)
+
+	def order_with_starter(self, starter, rest):
+		if rest == []:
+			return []
+
+		counts = {}
+		for atom in rest:
+			for var in atom.vars:
+				if var not in counts:
+					counts[var] = 0
+				counts[var] += 1
+
+		for var in starter.vars:
+			if var in counts:
+				counts[var] -= 1
+
+
+		best_atom = None
+		best_val = None
+		for atom in rest:
+			val = 0
+			for v in atom.vars:
+				val += counts[v]
+
+			if best_val is None:
+				best_val = val
+				best_atom = atom
+
+			else:
+				if val < best_val:
+					best_val = val
+					best_atom = atom
+
+		new_rest = [a for a in rest if a != best_atom]
+		return [best_atom] + self.order_with_starter(best_atom, new_rest)
+
+	def slot_comparisons(self, order, comparisons, starter_vars):
+		if comparisons == []:
+			return order
+
+		avail_vars = starter_vars
+
+		new_order = []
+
+		for atom in order:
+			avail_vars += atom.vars
+			new_order.append(atom)
+
+			for c in comparisons:
+				can_slot = True
+				for v in c.vars:
+					if v not in avail_vars:
+						can_slot = False
+
+				if can_slot:
+					new_order.append(c)
+
+					comparisons.remove(c)
+
+		return new_order
+
+	def get_vars_vals(self, ground_atom, var_locs):
+
+		vars_vals = {}
+		for var in var_locs:
+			ground_atom_args = ground_atom.symbol
+			for loc in var.positions:
+				ground_atom_args = ground_atom_args.arguments[loc]
+
+			vars_vals[var.var] = str(ground_atom_args)
+
+		return vars_vals
 	def init(self, init):
+		import pprint
+		pp = pprint.PrettyPrinter()
 		lits = set()
 
 		for sign, atom in self.signatures:
@@ -293,26 +378,36 @@ class PropagatorAST:
 			atom_type = self.atom_types.get_type(name, arity)
 
 			parse_str = str(atom)
+			var_locs = atom.var_loc()
 
-			for atom in init.symbolic_atoms.by_signature(name, arity):
+			for ground_atom in init.symbolic_atoms.by_signature(name, arity):
 
-				lit = init.solver_literal(atom.literal) * sign
-				AtomMap.add(atom.symbol, lit)
+				lit = init.solver_literal(ground_atom.literal) * sign
+				AtomMapping.add(ground_atom.symbol, lit)
 				lits.add(lit)
 
-				symb_str = str(atom.symbol)
+				symb_str = str(ground_atom.symbol)
 
-				print(symb_str, parse_str)
-				self.var_to_atom.add_atom(atom_type, symb_str, parse.parse(parse_str, symb_str))
-			
-			print(self.var_to_atom.atoms_by_var)
+				vars_vals = get_vars_vals(self, ground_atom.symbol, var_locs):
+
+				self.var_to_atom.add_atom(atom_type, symb_str, vars_vals)
+
+		#pp.pprint(self.var_to_atom.vars_to_atom)
+
+		# TODO: do a function that "builds" the watches so I dont watch every single Literal
+		# TODO: also, do a sort of mini propagation here
 
 		for lit in lits:
 			init.add_watch(lit)
 
-		import pprint
-		pp = pprint.PrettyPrinter()
-		print("a2l")
-		pp.pprint(AtomMap.atom_2_lit)
-		print("l2a")
-		pp.pprint(AtomMap.lit_2_atom)
+		#print("a2l")
+		#pp.pprint(AtomMapping.atom_2_lit)
+		#print("l2a")
+		#pp.pprint(AtomMap.lit_2_atom)
+
+	def propagate(self, control, changes):
+		for c in changes:
+			print(c)
+			for atom in AtomMapping.get_atoms(c):
+				print(atom)
+				print()
