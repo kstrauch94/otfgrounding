@@ -1,7 +1,7 @@
 from clingo import parse_term
 from clingo import ast
 
-from typing import Dict, List, Any, Set
+from typing import Dict, List, Any, OrderedDict, Set
 from collections import defaultdict
 
 import otfgrounding.util as util
@@ -280,19 +280,23 @@ class PropagatorAST:
 		for i, atom in enumerate(self.body_parts[BodyType.pos_atom]):
 			self.signatures.add((1, atom))
 
-			self.atom_types.add(atom.name, atom.arity)
+			atom_type = self.atom_types.add(atom.name, atom.arity, atom.var_loc())
+			atom.assign_atom_type(atom_type)
 
 		for i, atom in enumerate(self.body_parts[BodyType.neg_atom], start=i+1):
 			self.signatures.add((-1, atom))
 
-			self.atom_types.add(atom.name, atom.arity)
+			self.atom_types.add(atom.name, atom.arity, atom.var_loc())
 
 		all_atoms = self.body_parts[BodyType.pos_atom] + self.body_parts[BodyType.neg_atom]
 
 		for atom in all_atoms:
-			self.ground_orders[atom.name, tuple(atom.vars)] = self.slot_comparisons(self.order_with_starter(atom, [a for a in all_atoms if a != atom]),
+			self.ground_orders[atom] = self.slot_comparisons(self.order_with_starter(atom, [a for a in all_atoms if a != atom]),
 																					self.body_parts[BodyType.dom_comparison],
 																					atom.vars)
+		
+		print("ldafhajkfhskjdfh")
+		print(self.atom_types.atom_to_type)
 
 		for a, o in self.ground_orders.items():
 			print(a,o)
@@ -357,11 +361,11 @@ class PropagatorAST:
 
 		return new_order
 
-	def get_vars_vals(self, ground_atom, var_locs):
+	def get_vars_vals(self, ground_atom_symbol, var_locs):
 
 		vars_vals = {}
 		for var in var_locs:
-			ground_atom_args = ground_atom.symbol
+			ground_atom_args = ground_atom_symbol
 			for loc in var.positions:
 				ground_atom_args = ground_atom_args.arguments[loc]
 
@@ -388,7 +392,7 @@ class PropagatorAST:
 
 				symb_str = str(ground_atom.symbol)
 
-				vars_vals = get_vars_vals(self, ground_atom.symbol, var_locs):
+				vars_vals = self.get_vars_vals(ground_atom.symbol, var_locs)
 
 				self.var_to_atom.add_atom(atom_type, symb_str, vars_vals)
 
@@ -410,4 +414,43 @@ class PropagatorAST:
 			print(c)
 			for atom in AtomMapping.get_atoms(c):
 				print(atom)
-				print()
+				name = atom.name
+				arity = len(atom.arguments)
+				
+				if not self.atom_types.contains_atom(name, arity):
+					continue
+
+				atom_type = self.atom_types.get_type(name, arity)
+				print("stuff: ", name, arity, atom_type)
+
+				for _,_,var_loc in self.atom_types.get_atom(atom_type):
+					print(var_loc)
+					vars = tuple((loc.var for loc in var_loc))
+					print(vars)
+					vars_val = self.get_vars_vals(atom, var_loc)
+					print(vars_val)
+					
+					order = self.ground_orders[name, vars]
+					print(order)
+					for o in order:
+						self.match_atom(atom_type, vars_val)
+			print()
+
+
+	def get_atom_from(self, name, arity, vars):
+		...
+
+	def match_atom(self, atom_type, vars_val):
+		atom_sets = []
+
+		for var, val in vars_val.items():
+			atoms = self.var_to_atom.atoms_by_var(atom_type, var, val)
+
+			if atoms is None:
+				continue
+
+			atom_sets.append(atoms)
+
+		print(atom_sets)
+
+		print(set.intersection(*atom_sets))

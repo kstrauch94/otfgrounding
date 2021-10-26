@@ -32,9 +32,9 @@ class ConstraintInspector:
 						atom = self.inspect_ast(body.atom.symbol)
 
 						if body.sign == Sign.NoSign:
-							self.body_parts[BodyType.pos_atom].append(atom)
+							self.body_parts[BodyType.pos_atom].append(Literal(atom, 1))
 						elif body.sign == Sign.Negation:
-							self.body_parts[BodyType.neg_atom].append(atom)
+							self.body_parts[BodyType.neg_atom].append(Literal(atom, -1))
 						else:
 							print("ERROR???", body.sign)
 

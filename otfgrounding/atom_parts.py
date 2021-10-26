@@ -1,4 +1,5 @@
 
+
 class Function:
 
 	def __init__(self, name, args):
@@ -37,8 +38,50 @@ class Function:
 		# do a function like this on everything!
 		...
 
+
+class Literal(Function):
+
+	def __init__(self, function, sign) -> None:
+		self.function = function
+		self.sign = sign
+
+		self.atom_type = None
+
+	def assign_atom_type(self, atom_type):
+		self.atom_type = atom_type
+
+	@property
+	def name(self):
+		return self.function.name
+
+	@property
+	def args(self):
+		return self.function.args
+
+	@property	
+	def arity(self):
+		return self.function.arity
+
+	def __str__(self):
+		if self.sign == 1:
+			return str(self.function)
+
+		elif self.sign == -1:
+			return "not " + str(self.function)
+
 	def __repr__(self):
 		return str(self)
+
+	@property
+	def vars(self):
+		return self.function.vars
+
+	def var_loc(self):
+		return self.function.var_loc()
+
+	def substitute(self, subs):
+		# do a function like this on everything!
+		...
 
 class Variable:
 
@@ -108,6 +151,9 @@ class VarInfo:
 
 	def __str__(self):
 		return f"{self.var} -- {self.positions}"
+
+	def __repr__(self):
+		return str(self)
 
 class Comparison:
 

@@ -13,18 +13,35 @@ class AtomTypes:
 
 	def __init__(self):
 		self.atom_to_type = {}
+		self.type_to_atom = {}
 
 		self.type_count = 0
 
-	def add(self, name, arity):
+	def add(self, name, arity, var_loc):
 
 		if (name, arity) not in self.atom_to_type:
-			self.atom_to_type[name, arity] = (name, arity)#self.type_count
+			self.atom_to_type[name, arity] = self.type_count
+
+			self.type_to_atom[self.type_count] = [(name, arity, var_loc)]
 
 			self.type_count += 1
 
+			return self.type_count - 1
+
+		else:
+			atom_type = self.atom_to_type[name, arity]
+			self.type_to_atom[atom_type].append((name, arity, var_loc))
+
+			return atom_type
+
 	def get_type(self, name, arity):
 		return self.atom_to_type[name, arity]
+
+	def get_atom(self, atom_type):
+		return self.type_to_atom[atom_type]
+
+	def contains_atom(self, name, arity):
+		return (name, arity) in self.atom_to_type
 
 class VarToAtom:
 
@@ -44,6 +61,9 @@ class VarToAtom:
 			self.vars_to_atom[v][atom_type, vars_vals[v]].add(atom)
 
 	def atoms_by_var(self, atom_type, var, val):
+		if (atom_type, val) not in self.vars_to_atom[var]:
+			return None
+
 		return self.vars_to_atom[var][atom_type, val]
 
 
@@ -57,18 +77,17 @@ class AtomMapping:
 	@classmethod
 	def add(cls, symbol, lit):
 		#print(symbol)
-		symb_str = str(symbol)
 
 		if lit not in cls.lit_2_atom:
 			cls.lit_2_atom[lit] = []
 
-		cls.lit_2_atom[lit].append(symb_str)
+		cls.lit_2_atom[lit].append(symbol)
 
-		cls.atom_2_lit[symb_str] = lit
+		cls.atom_2_lit[symbol] = lit
 
 	@classmethod
-	def get_lit(cls, symb_str):
-		return cls.atom_2_lit[symb_str]
+	def get_lit(cls, symbol):
+		return cls.atom_2_lit[symbol]
 
 	@classmethod
 	def get_atoms(cls, lit):
