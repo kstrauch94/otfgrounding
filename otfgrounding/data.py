@@ -17,12 +17,14 @@ class AtomTypes:
 
 		self.type_count = 0
 
-	def add(self, name, arity, var_loc):
+	def add(self, atom):
+
+		name, arity = atom.name, atom.arity
 
 		if (name, arity) not in self.atom_to_type:
 			self.atom_to_type[name, arity] = self.type_count
 
-			self.type_to_atom[self.type_count] = [(name, arity, var_loc)]
+			self.type_to_atom[self.type_count] = [atom]
 
 			self.type_count += 1
 
@@ -30,7 +32,7 @@ class AtomTypes:
 
 		else:
 			atom_type = self.atom_to_type[name, arity]
-			self.type_to_atom[atom_type].append((name, arity, var_loc))
+			self.type_to_atom[atom_type].append(atom)
 
 			return atom_type
 
@@ -60,12 +62,23 @@ class VarToAtom:
 
 			self.vars_to_atom[v][atom_type, vars_vals[v]].add(atom)
 
-	def atoms_by_var(self, atom_type, var, val):
+	def atoms_by_var_val(self, atom_type, var, val):
 		if (atom_type, val) not in self.vars_to_atom[var]:
 			return None
 
 		return self.vars_to_atom[var][atom_type, val]
 
+
+	def atoms_by_var(self, atom_type, var):
+		atoms = set()
+
+		for other_atom_type, val in self.vars_to_atom[var]:
+			if atom_type != other_atom_type:
+				continue
+
+			atoms.update(self.vars_to_atom[var][atom_type, val])
+
+		return atoms
 
 class AtomMapping:
 
@@ -75,22 +88,23 @@ class AtomMapping:
 
 
 	@classmethod
-	def add(cls, symbol, lit):
+	def add(cls, symbol, sign, lit):
 		#print(symbol)
 
 		if lit not in cls.lit_2_atom:
 			cls.lit_2_atom[lit] = []
 
-		cls.lit_2_atom[lit].append(symbol)
+		cls.lit_2_atom[lit].append((symbol, sign))
 
-		cls.atom_2_lit[symbol] = lit
+		cls.atom_2_lit[symbol, sign] = lit
 
 	@classmethod
-	def get_lit(cls, symbol):
-		return cls.atom_2_lit[symbol]
+	def get_lit(cls, symbol, sign):
+		return cls.atom_2_lit[symbol, sign]
 
 	@classmethod
 	def get_atoms(cls, lit):
+
 		return cls.lit_2_atom[lit]
 
 class AtomMap:

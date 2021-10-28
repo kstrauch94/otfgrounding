@@ -6,7 +6,7 @@ from clingo.ast import ASTType
 
 
 class ConstraintInspector:
-
+	un_op = {0: "-"}
 	bin_op = {4: "-"}
 	comp_op = {5: "="}
 
@@ -16,7 +16,7 @@ class ConstraintInspector:
 							BodyType.neg_atom: []}
 
 	def inspect_constraint(self, ast):
-
+		print("Inspection!")
 
 		if ast.ast_type == ASTType.Rule:
 			for body in ast.body:
@@ -32,14 +32,16 @@ class ConstraintInspector:
 						atom = self.inspect_ast(body.atom.symbol)
 
 						if body.sign == Sign.NoSign:
-							self.body_parts[BodyType.pos_atom].append(Literal(atom, 1))
+							lit = Literal(atom, 1)
+							self.body_parts[BodyType.pos_atom].append(lit)
 						elif body.sign == Sign.Negation:
-							self.body_parts[BodyType.neg_atom].append(Literal(atom, -1))
+							lit = Literal(atom,-1)
+							self.body_parts[BodyType.neg_atom].append(lit)
 						else:
 							print("ERROR???", body.sign)
 
-						print("the atom", atom)
-						print("the vars", atom.vars)
+						print("the atom", lit)
+						print("the vars", lit.vars)
 
 		#import pprint
 		#pp = pprint.PrettyPrinter()
@@ -54,6 +56,9 @@ class ConstraintInspector:
 
 		elif ast.ast_type == ASTType.BinaryOperation:
 			return BinaryOp(*self.inspect_binary_op(ast))
+
+		elif ast.ast_type == ASTType.UnaryOperation:
+			return UnaryOp(*self.inspect_unary_op(ast))
 
 		elif ast.ast_type == ASTType.SymbolicTerm:
 			#this is a string even if it is a "number"
@@ -74,7 +79,6 @@ class ConstraintInspector:
 
 
 	def inspect_binary_op(self, ast):
-		operation = []
 		operator = ast.operator_type
 		operator = ConstraintInspector.bin_op[operator]
 
@@ -82,6 +86,14 @@ class ConstraintInspector:
 		right = self.inspect_ast(ast.right)
 
 		return left, operator, right
+
+	def inspect_unary_op(self, ast):
+		operator = ast.operator_type
+		operator = ConstraintInspector.un_op[operator]
+
+		arg = self.inspect_ast(ast.argument)
+
+		return operator, arg
 
 
 	def inspect_comparison(self, ast):

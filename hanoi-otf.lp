@@ -35,4 +35,6 @@ blocked(D-1,P,T) :- blocked(D,P,T), rdisk(D), time(T), T>0.
 
 :- rdisk(D), not 1 {on(D,P,T)} 1, time(T), T>0.
 
-%#show on/3.
+#show on/3.
+#show blocked/3.
+#show on/3.

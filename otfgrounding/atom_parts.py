@@ -7,6 +7,8 @@ class Function:
 		self.args = args
 		self.arity = len(args)
 
+		self.var_loc_cached = None
+
 	def __str__(self):
 		arg_str = []
 		for arg in self.args:
@@ -26,17 +28,23 @@ class Function:
 		return vars
 
 	def var_loc(self):
-		vars = []
-		for i, arg in enumerate(self.args):
-			for v in arg.var_loc():
-				v.add_pos(i)
-				vars.append(v)
+		if self.var_loc_cached is None:
+			vars = []
+			for i, arg in enumerate(self.args):
+				for v in arg.var_loc():
+					v.add_pos(i)
+					vars.append(v)
 
-		return vars
+			self.var_loc_cached = vars
 
-	def substitute(self, subs):
-		# do a function like this on everything!
-		...
+		return self.var_loc_cached
+
+	def eval(self, vars_val):
+		arg_str = []
+		for arg in self.args:
+			arg_str.append(str(arg.eval))
+
+		return f"{self.name}({','.join(arg_str)})"
 
 
 class Literal(Function):
@@ -79,10 +87,6 @@ class Literal(Function):
 	def var_loc(self):
 		return self.function.var_loc()
 
-	def substitute(self, subs):
-		# do a function like this on everything!
-		...
-
 class Variable:
 
 	def __init__(self, var):
@@ -101,6 +105,14 @@ class Variable:
 	def __repr__(self):
 		return str(self)
 
+	def eval(self, vars_val):
+		val = vars_val[self.var]
+		try:
+			val = int(val)
+			return val
+		except ValueError:
+			return val
+
 class SymbTerm:
 
 	def __init__(self, symbterm):
@@ -117,6 +129,9 @@ class SymbTerm:
 		return []
 
 	def __repr__(self):
+		return str(self)
+
+	def eval(self, vars_val):
 		return str(self)
 
 class BinaryOp:
@@ -138,6 +153,45 @@ class BinaryOp:
 
 	def __repr__(self):
 		return str(self)
+
+	def eval(self, vars_val):
+		# both sides have to be integers!!
+		left = int(self.left.eval(vars_val))
+		right = int(self.right.eval(vars_val))
+
+		if self.op == "-":
+			# check types!
+			return left - right
+
+		raise TypeError("op not known/implemented yet!")
+
+class UnaryOp:
+
+	def __init__(self, op, arg):
+		self.op = op
+		self.arg = arg
+
+	def __str__(self):
+		return str(self.op) + str(self.arg)
+
+	@property
+	def vars(self):
+		return self.arg.vars
+
+	def var_loc(self):
+		return self.arg.var_loc()
+
+	def __repr__(self):
+		return str(self)
+
+	def eval(self, vars):
+		# term has to be a var or term integers!!
+		val = int(self.arg.eval(vars))
+		if self.op == "-":
+			return -val
+
+		raise TypeError("op not known/implemented yet!")
+	
 
 class VarInfo:
 
@@ -171,3 +225,13 @@ class Comparison:
 
 	def __repr__(self):
 		return str(self)
+
+	def eval(self, vars_val):
+		left = self.left.eval(vars_val)
+		right = self.right.eval(vars_val)
+
+		if type(left) != type(right):
+			raise TypeError(f"Types dont coincide for left {left} {type(left)} and right {right} {type(right)}")
+
+		if self.op == "=":
+			return left == right

@@ -3,8 +3,8 @@ import os
 
 from otfgrounding import util
 
-from otfgrounding.propagator.propagator import Propagator
 from otfgrounding.propagator.propagator import PropagatorAST
+from otfgrounding.data import BodyType
 
 
 from clingo.ast import parse_string
@@ -29,9 +29,10 @@ class Handler:
 				c_inspector = ConstraintInspector()
 				parse_string(line, c_inspector.inspect_constraint)
 
-				p = PropagatorAST(c_inspector.body_parts)
+				if c_inspector.body_parts[BodyType.pos_atom] != []:
+					p = PropagatorAST(c_inspector.body_parts)
 
-				prg.register_propagator(p)
+					prg.register_propagator(p)
 
 
 	def __str__(self) -> str:
