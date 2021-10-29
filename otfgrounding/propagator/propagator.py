@@ -146,6 +146,8 @@ class PropagatorAST:
 	def init(self, init):
 		#import pprint
 		#pp = pprint.PrettyPrinter()
+		self.lits = set()
+
 		lits = set()
 
 		for sign, atom in self.signatures:
@@ -175,6 +177,7 @@ class PropagatorAST:
 		for lit in lits:
 			init.add_watch(lit)
 
+	@util.Count("Propagate")
 	def propagate(self, control, changes):
 		with util.Timer("Propagation-{}".format(str(self.id))):
 			for c in changes:
@@ -190,39 +193,49 @@ class PropagatorAST:
 					for atom_object in self.atom_types.get_atom(atom_type):
 						if atom_object.sign != sign:
 							continue
-						vars = tuple((loc.var for loc in atom_object.var_loc()))
-						vars_val = self.get_vars_vals(ground_atom, atom_object.var_loc())
+
 						
 						order = self.ground_orders[atom_object]
 
 						ng = [c]
 
-						assignments = vars_val
+						assignments = self.get_vars_vals(ground_atom, atom_object.var_loc())
 
 						is_unit = False
 
-						if self.ground(order[0], order[1], ng, assignments, is_unit, control) is None:
-							return None
+						with util.Timer(f"ground-{self.id}"):
+							if self.ground(order[0], order[1], ng, assignments, is_unit, control) is None:
+								return None
 					
 
 								
 
-	def ground(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control):
+	@util.Count("ground")
+	def ground(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control, init=False):
 		if order_pos == []:
 			# do stuff with negative atoms
 			if order_neg == []:
 				# if we got here it means we found a unit or conflicting nogood and we should add it to the solver
-				if not control.add_nogood(current_ng) or not control.propagate():
-					return None
+				if not init:
+					if not control.add_nogood(current_ng) or not control.propagate():
+						return None
+				else:
+					if len(current_ng) == 1:
+						util.Count.add("add size 1")
+						control.add_clause([-l])
+						return 1
+
+					self.lits.update(current_ng)
+					
 				
 				return 1
 
-			return self.ground_neg(order_neg, current_ng, current_assignment, is_unit, control)
+			return self.ground_neg(order_neg, current_ng, current_assignment, is_unit, control, init)
 			
 
-		return self.ground_pos(order_pos, order_neg, current_ng, current_assignment, is_unit, control)
+		return self.ground_pos(order_pos, order_neg, current_ng, current_assignment, is_unit, control, init)
 
-	def ground_pos(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control):
+	def ground_pos(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control, init=False):
 
 		next_lit = order_pos[0]
 		if isinstance(next_lit, Comparison):
@@ -232,7 +245,7 @@ class PropagatorAST:
 				# if it is None, then revert the unit_result to False
 				return 1
 
-			if self.ground(order_pos[1:], order_neg, current_ng, current_assignment, is_unit, control) is None:
+			if self.ground(order_pos[1:], order_neg, current_ng, current_assignment, is_unit, control, init) is None:
 				return None
 
 			return 1
@@ -254,13 +267,13 @@ class PropagatorAST:
 							new_ng,
 							vars_vals,
 							new_is_unit,
-							control) is None:
+							control, init) is None:
 
 					return None
 	
 		return 1
 
-	def ground_neg(self, order_neg, current_ng, current_assignment, is_unit, control):
+	def ground_neg(self, order_neg, current_ng, current_assignment, is_unit, control, init=False):
 		# if we are here we have to deal with the negative atoms
 			
 
@@ -284,7 +297,7 @@ class PropagatorAST:
 						new_ng,
 						current_assignment,
 						new_is_unit,
-						control) is None:
+						control, init) is None:
 				return None
 
 		return 1
@@ -313,6 +326,7 @@ class PropagatorAST:
 
 			yield match, lit, new_is_unit
 
+	@util.Timer("Time to match pos atom")
 	def match_pos_atom(self, atom, assignment):
 		atom_sets = []
 
@@ -332,19 +346,13 @@ class PropagatorAST:
 			atom_sets.append(atoms)
 
 
-
 		return set.intersection(*atom_sets)
 
+	@util.Timer("Time to match Comparison")
 	def match_comparison(self, comparison, assignment):
 		return comparison.eval(assignment)
 
-	def condense_assignment(self, *assignments):
-		new_assignment = {}
-		for a in assignments:
-			new_assignment.update(a)
-
-		return new_assignment
-
+	@util.Timer("Time to Check")
 	def check(self, control):
 		first_atom = self.body_parts[BodyType.pos_atom][0]
 		order = self.ground_orders[first_atom]
