@@ -42,7 +42,10 @@ class Application:
 			for name in files:
 				prg.load(name)
 
-			self.__handler = Handler(self.cfile)
+			with open(self.cfile, "r") as f:
+				cfile_contents = f.read()
+
+			self.__handler = Handler(cfile_contents)
 
 			with util.Timer("ground time"):
 				prg.ground([("base", [])])
