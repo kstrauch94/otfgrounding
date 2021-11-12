@@ -85,26 +85,26 @@ class Count:
 	def add(cls, name, amt=1) -> None:
 		Count.counts[name] += amt
 
-class Stats:
-	stats: Dict[str, Any] = {}
-
-	@classmethod
-	def add(cls, name, val):
-		cls.stats[name] = val
-
 
 def print_stats(step, accu):
-	for name, time_taken in Timer.timers.items():
-		print(f"Time {name:15}      :   {time_taken:.3f}")
-		accu[f"Time {name:18}"] = time_taken
+	time_prop = 0
+	for name, time_taken in sorted(Timer.timers.items()):
+		if "Propagation" in name:
+			time_prop += time_taken
+			continue
+		else:
+			print(f"{name:19}  :   {time_taken:.3f}")
+			accu[f"{name:24}"] = time_taken
 
-	for name, count in Count.counts.items():
-		print(f"Calls to {name:15}  :   {count}")
-		accu[f"{name:23}"] = count
+	print("{name:19}  :   {time_taken:.3f}".format(name="Time for propagation", time_taken=time_prop))
+	accu["{name:24}".format(name="Time for propagation")] = time_taken
 
-	for name, val in Stats.stats.items():
-		print(f"{name:15}   :   {val}")
-		accu[f"{name:23}"] = val
+
+	for name, count in sorted(Count.counts.items()):
+		print(f"{name:24}  :   {count}")
+		accu[f"{name:24}"] = count
+
+
 
 def get_size(obj, seen=None):
 	"""
@@ -133,3 +133,33 @@ def get_size(obj, seen=None):
 
 def sign(y):
 	return copysign(1, y)
+
+
+#testBit() returns a nonzero result, 2**offset, if the bit at 'offset' is one.
+def test_bit(int_type, offset):
+    mask = 1 << offset
+    return(int_type & mask)
+
+# setBit() returns an integer with the bit at 'offset' set to 1.
+ 
+def set_bit(int_type, offset):
+    mask = 1 << offset
+    return(int_type | mask)
+
+# clearBit() returns an integer with the bit at 'offset' cleared.
+
+def clear_bit(int_type, offset):
+    mask = ~(1 << offset)
+    return(int_type & mask)
+
+# toggleBit() returns an integer with the bit at 'offset' inverted, 0 -> 1 and 1 -> 0.
+
+def toggle_bit(int_type, offset):
+    mask = 1 << offset
+    return(int_type ^ mask)
+
+# returns False if bit at offset is 0, True otherwise
+def is_bit_true(int_type, offset):
+	if test_bit(int_type, offset) > 0:
+		return True
+	return False
