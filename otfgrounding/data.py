@@ -62,6 +62,7 @@ class VarToAtom:
 
 			self.vars_to_atom[v][atom_type, vars_vals[v]].add(atom)
 
+	#@profile
 	def atoms_by_var_val(self, atom_type, var, val):
 		if (atom_type, val) not in self.vars_to_atom[var]:
 			return None

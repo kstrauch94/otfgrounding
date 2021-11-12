@@ -142,7 +142,7 @@ class PropagatorAST:
 
 		return vars_vals
 
-	@util.Timer("")
+	@util.Timer("Time to init")
 	def init(self, init):
 		#import pprint
 		#pp = pprint.PrettyPrinter()
@@ -160,13 +160,9 @@ class PropagatorAST:
 				
 				lit = init.solver_literal(ground_atom.literal) * sign
 				AtomMapping.add(ground_atom.symbol, sign, lit)
-				# mapping only has positive ones
-				# but to watch we add the negative
 				lits.add(lit)
 
-				vars_vals = self.get_vars_vals(ground_atom.symbol, var_locs)
-
-				self.var_to_atom.add_atom(atom_type, ground_atom.symbol, vars_vals)
+				self.var_to_atom.add_atom(atom_type, ground_atom.symbol, self.get_vars_vals(ground_atom.symbol, var_locs))
 
 		#pp.pprint(self.var_to_atom.vars_to_atom)
 		#pp.pprint(AtomMapping.atom_2_lit)
@@ -176,6 +172,8 @@ class PropagatorAST:
 
 		for lit in lits:
 			init.add_watch(lit)
+
+		print("Init is DONE")
 
 	@util.Count("Propagate")
 	def propagate(self, control, changes):
@@ -206,46 +204,33 @@ class PropagatorAST:
 						with util.Timer(f"ground-{self.id}"):
 							if self.ground(order[0], order[1], ng, assignments, is_unit, control) is None:
 								return None
-					
 
-								
-
-	@util.Count("ground")
-	def ground(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control, init=False):
+	#@util.Count("ground")
+	def ground(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control):
 		if order_pos == []:
 			# do stuff with negative atoms
 			if order_neg == []:
 				# if we got here it means we found a unit or conflicting nogood and we should add it to the solver
-				if not init:
-					if not control.add_nogood(current_ng) or not control.propagate():
-						return None
-				else:
-					if len(current_ng) == 1:
-						util.Count.add("add size 1")
-						control.add_clause([-l])
-						return 1
-
-					self.lits.update(current_ng)
-					
+				if not control.add_nogood(current_ng) or not control.propagate():
+					return None
 				
 				return 1
 
-			return self.ground_neg(order_neg, current_ng, current_assignment, is_unit, control, init)
+			return self.ground_neg(order_neg, current_ng, current_assignment, is_unit, control)
 			
 
-		return self.ground_pos(order_pos, order_neg, current_ng, current_assignment, is_unit, control, init)
+		return self.ground_pos(order_pos, order_neg, current_ng, current_assignment, is_unit, control)
 
-	def ground_pos(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control, init=False):
+	#@profile
+	def ground_pos(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control):
 
 		next_lit = order_pos[0]
 		if isinstance(next_lit, Comparison):
 			result = self.match_comparison(next_lit, current_assignment)
 			if result == False:
-				#check that previous lit is not None in the assignment
-				# if it is None, then revert the unit_result to False
 				return 1
 
-			if self.ground(order_pos[1:], order_neg, current_ng, current_assignment, is_unit, control, init) is None:
+			if self.ground(order_pos[1:], order_neg, current_ng, current_assignment, is_unit, control) is None:
 				return None
 
 			return 1
@@ -258,22 +243,22 @@ class PropagatorAST:
 					continue
 
 				# getting here means lit is true or the first unassigned one
-				new_ng = current_ng + [lit]
 				vars_vals = self.get_vars_vals(match, next_lit.var_loc())
-				vars_vals.update(current_assignment)
+				for k, v in current_assignment.items():
+					vars_vals[k] = v
 
 				if self.ground(order_pos[1:],
 							order_neg,
-							new_ng,
+							current_ng + [lit],
 							vars_vals,
 							new_is_unit,
-							control, init) is None:
+							control) is None:
 
 					return None
 	
 		return 1
 
-	def ground_neg(self, order_neg, current_ng, current_assignment, is_unit, control, init=False):
+	def ground_neg(self, order_neg, current_ng, current_assignment, is_unit, control):
 		# if we are here we have to deal with the negative atoms
 			
 
@@ -297,12 +282,12 @@ class PropagatorAST:
 						new_ng,
 						current_assignment,
 						new_is_unit,
-						control, init) is None:
+						control) is None:
 				return None
 
 		return 1
 
-
+	#@profile
 	def get_next_lits(self, next_atom, current_assignment, is_unit, control):
 		matches = self.match_pos_atom(next_atom, current_assignment)
 		
@@ -314,7 +299,7 @@ class PropagatorAST:
 			# for every match
 			# grab lit of match
 			new_is_unit = is_unit
-			lit = AtomMapping.get_lit(match, next_atom.sign)
+			lit = AtomMapping.atom_2_lit[match, next_atom.sign]
 			if control.assignment.value(lit) is None:
 				if is_unit:
 					continue
@@ -327,13 +312,13 @@ class PropagatorAST:
 			yield match, lit, new_is_unit
 
 	@util.Timer("Time to match pos atom")
+	#@profile
 	def match_pos_atom(self, atom, assignment):
 		atom_sets = []
 
 		for var, val in assignment.items():
 			if var not in atom.vars:
 				continue
-			
 			atoms = self.var_to_atom.atoms_by_var_val(atom.atom_type, var, val)
 
 			if atoms is None:
@@ -341,11 +326,12 @@ class PropagatorAST:
 				# maybe have an internal data structure that keeps track of "impossible" variables?
 				# if there is a propagation step with an impossible variable just do nothing
 				# maybe also "unwatch" all atoms that have this impossible variable
-				return {}
+				return set()
 
 			atom_sets.append(atoms)
 
-
+		if len(atom_sets) == 0:
+			return set()
 		return set.intersection(*atom_sets)
 
 	@util.Timer("Time to match Comparison")
@@ -368,12 +354,7 @@ class PropagatorAST:
 			lit = AtomMapping.get_lit(ground_atom, first_atom.sign)
 			if control.assignment.is_false(lit):
 				continue
-			ng = [lit]
 
-			assignments = vars_val
-
-			is_unit = False
-
-			if self.ground(order[0], order[1], ng, assignments, is_unit, control) is None:
+			if self.ground(order[0], order[1], [lit], vars_val, False, control) is None:
 				return None
 		
