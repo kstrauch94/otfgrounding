@@ -7,13 +7,22 @@ from clingo.ast import ASTType
 
 class ConstraintInspector:
 	un_op = {0: "-"}
-	bin_op = {4: "-"}
-	comp_op = {5: "="}
 
-	def __init__(self):
+	bin_op = {4: "-",
+			  3: "+",
+			  5: "*",
+			  6: "/"}
+
+	comp_op = {5: "=",
+			   1: "<",
+			   0: ">"}
+
+	def __init__(self, prg):
 		self.body_parts = {BodyType.dom_comparison: [],
 							BodyType.pos_atom: [],
 							BodyType.neg_atom: []}
+
+		self.prg = prg
 
 	def inspect_constraint(self, ast):
 		print("Inspection!")
@@ -62,6 +71,10 @@ class ConstraintInspector:
 
 		elif ast.ast_type == ASTType.SymbolicTerm:
 			#this is a string even if it is a "number"
+			const = self.prg.get_const(str(ast.symbol))
+			if const is not None:
+				return SymbTerm(const)
+			
 			return SymbTerm(ast.symbol)
 
 		elif ast.ast_type == ASTType.Function:

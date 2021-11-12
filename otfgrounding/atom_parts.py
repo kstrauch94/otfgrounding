@@ -116,7 +116,12 @@ class Variable:
 class SymbTerm:
 
 	def __init__(self, symbterm):
-		self.symbterm = symbterm
+		if hasattr(symbterm, "number"):
+			self.symbterm = symbterm.number
+		elif hasattr(symbterm, "string"):
+			self.symbterm = symbterm.string
+		else:
+			self.symbterm = str(symbterm)
 
 	def __str__(self):
 		return str(self.symbterm)
@@ -132,7 +137,7 @@ class SymbTerm:
 		return str(self)
 
 	def eval(self, vars_val):
-		return str(self)
+		return self.symbterm
 
 class BinaryOp:
 
@@ -231,7 +236,13 @@ class Comparison:
 		right = self.right.eval(vars_val)
 
 		if type(left) != type(right):
-			raise TypeError(f"Types dont coincide for left {left} {type(left)} and right {right} {type(right)}")
+			raise TypeError(f"Types dont coincide for left {left} {type(left)} and right {right} {type(right)} {type(self.right)}")
 
 		if self.op == "=":
 			return left == right
+		elif self.op == "<":
+			return left < right
+		elif self.op == ">":
+			return left > right
+
+		raise TypeError("op not known/implemented yet!")
