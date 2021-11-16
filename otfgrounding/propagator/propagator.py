@@ -9,6 +9,7 @@ from otfgrounding.data import AtomMapping, AtomMap
 from otfgrounding.data import BodyType
 from otfgrounding.data import VarToAtom
 from otfgrounding.data import AtomTypes
+from otfgrounding.data import VarLocToAtom
 
 from otfgrounding.atom_parts import Comparison
 from otfgrounding.atom_parts import Literal
@@ -60,17 +61,16 @@ class PropagatorAST:
 			# if atom is a negative one
 			# do the order of the positive ones first and append all of the other negative ones
 			# at the end
-			self.ground_orders[atom] = [self.slot_comparisons(self.order_with_starter(atom, [a for a in self.body_parts[BodyType.pos_atom] if a != atom]),
+			self.ground_orders[atom] = [self.slot_comparisons(self.order_with_starter(atom, [a for a in self.body_parts[BodyType.pos_atom] if a != atom], set(atom.vars)),
 															  self.body_parts[BodyType.dom_comparison],
 															  atom.vars)
 										, [neg_atom for neg_atom in self.body_parts[BodyType.neg_atom] if neg_atom != atom]]
 		
-
-
-
-	def order_with_starter(self, starter, rest):
+	def order_with_starter(self, starter, rest, seen_vars):
 		if rest == []:
 			return []
+
+		seen_vars.update(starter.vars)
 
 		counts = {}
 		for atom in rest:
@@ -79,7 +79,7 @@ class PropagatorAST:
 					counts[var] = 0
 				counts[var] += 1
 
-		for var in starter.vars:
+		for var in seen_vars:
 			if var in counts:
 				counts[var] -= 1
 
@@ -101,7 +101,7 @@ class PropagatorAST:
 					best_atom = atom
 
 		new_rest = [a for a in rest if a != best_atom]
-		return [best_atom] + self.order_with_starter(best_atom, new_rest)
+		return [best_atom] + self.order_with_starter(best_atom, new_rest, seen_vars)
 
 	def slot_comparisons(self, order, comparisons, starter_vars):
 		if comparisons == []:
@@ -138,7 +138,7 @@ class PropagatorAST:
 			for loc in var.positions:
 				ground_atom_args = ground_atom_args.arguments[loc]
 
-			vars_vals[var.var] = str(ground_atom_args)
+			vars_vals[var] = str(ground_atom_args)
 
 		return vars_vals
 
@@ -162,7 +162,9 @@ class PropagatorAST:
 				AtomMapping.add(ground_atom.symbol, sign, lit)
 				lits.add(lit)
 
-				self.var_to_atom.add_atom(atom_type, ground_atom.symbol, self.get_vars_vals(ground_atom.symbol, var_locs))
+				#self.var_to_atom.add_atom(atom_type, ground_atom.symbol, self.get_vars_vals(ground_atom.symbol, var_locs))
+
+				VarLocToAtom.add_atom(atom_type, ground_atom.symbol, self.get_vars_vals(ground_atom.symbol, var_locs))
 
 		#pp.pprint(self.var_to_atom.vars_to_atom)
 		#pp.pprint(AtomMapping.atom_2_lit)
@@ -189,6 +191,7 @@ class PropagatorAST:
 					atom_type = self.atom_types.get_type(name, arity)
 
 					for atom_object in self.atom_types.get_atom(atom_type):
+						#print("ao ", atom_object)
 						if atom_object.sign != sign:
 							continue
 
@@ -201,12 +204,16 @@ class PropagatorAST:
 
 						is_unit = False
 
+						#print("############grounding on id", self.id, ground_atom)
+						#print(order)
 						with util.Timer(f"ground-{self.id}"):
 							if self.ground(order[0], order[1], ng, assignments, is_unit, control) is None:
 								return None
+						#print("DONE G")
 
 	#@util.Count("ground")
 	def ground(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control):
+		#print("ground call id", self.id, order_pos, order_neg, current_ng, current_assignment)
 		if order_pos == []:
 			# do stuff with negative atoms
 			if order_neg == []:
@@ -227,6 +234,8 @@ class PropagatorAST:
 		next_lit = order_pos[0]
 		if isinstance(next_lit, Comparison):
 			result = self.match_comparison(next_lit, current_assignment)
+			#print(current_assignment)
+			#print(next_lit, result)
 			if result == False:
 				return 1
 
@@ -236,12 +245,14 @@ class PropagatorAST:
 			return 1
 
 		elif isinstance(next_lit, Literal):
-
+			#print("next: ", next_lit)
+			#print(current_assignment)
 			for match, lit, new_is_unit in self.get_next_lits(next_lit, current_assignment, is_unit, control):
-
+				
 				if match is None:
+					#print("cont")
 					continue
-
+				#print("match ", match)
 				# getting here means lit is true or the first unassigned one
 				vars_vals = self.get_vars_vals(match, next_lit.var_loc())
 				for k, v in current_assignment.items():
@@ -255,7 +266,7 @@ class PropagatorAST:
 							control) is None:
 
 					return None
-	
+		#print("pos returnin 1")
 		return 1
 
 	def ground_neg(self, order_neg, current_ng, current_assignment, is_unit, control):
@@ -289,8 +300,9 @@ class PropagatorAST:
 
 	#@profile
 	def get_next_lits(self, next_atom, current_assignment, is_unit, control):
+		#print("get lits")
 		matches = self.match_pos_atom(next_atom, current_assignment)
-		
+		#print("match count: ", len(matches))
 		if len(matches) == 0:
 			yield None, 0, is_unit
 			return
@@ -317,9 +329,11 @@ class PropagatorAST:
 		atom_sets = []
 
 		for var, val in assignment.items():
-			if var not in atom.vars:
+			if var.var not in atom.vars:
 				continue
-			atoms = self.var_to_atom.atoms_by_var_val(atom.atom_type, var, val)
+			#atoms = self.var_to_atom.atoms_by_var_val(atom.atom_type, var, val)
+			atoms = VarLocToAtom.atoms_by_var_val(atom.atom_type, atom.varinfo_for_var(var.var), val)
+			#print(atoms)
 
 			if atoms is None:
 				# if there is no atoms for a particular variable then the conflict cant exist
@@ -329,10 +343,51 @@ class PropagatorAST:
 				return set()
 
 			atom_sets.append(atoms)
+		"""
+		no_atoms_in_assignment = True
 
+		for k in assignment:
+			if k.var in atom.vars:
+				no_atoms_in_assignment = False
+				break
+
+		if no_atoms_in_assignment:
+			if len(atom_sets) == 0:
+				all_atoms = set()
+				for var in atom.vars:
+					all_atoms.update(VarLocToAtom.atoms_by_var(atom.atom_type, atom.varinfo_for_var(var)))
+				return all_atoms
+
+
+
+		atoms = set()
+		var_locs = atom.var_loc()
+		for symbol, sign in AtomMapping.atom_2_lit.keys():
+			if sign != atom.sign or symbol.name != atom.name or len(symbol.arguments) != atom.arity:
+				continue
+			
+			for k, v in self.get_vars_vals(symbol, var_locs).items():
+				if k in assignment:
+					no_atoms_in_assignment = False
+					if v == assignment[k]:
+						atoms.add(symbol)
+
+		return atoms
+
+
+		"""
+
+		# this part here handles when an atom has no variables in the assignment
 		if len(atom_sets) == 0:
-			return set()
-		return set.intersection(*atom_sets)
+			all_atoms = set()
+			for var in atom.vars:
+				all_atoms.update(VarLocToAtom.atoms_by_var(atom.atom_type, atom.varinfo_for_var(var)))
+			return all_atoms
+
+		with util.Timer("intersection"):
+			sec = set.intersection(*atom_sets)
+		
+		return sec
 
 	@util.Timer("Time to match Comparison")
 	def match_comparison(self, comparison, assignment):
@@ -345,8 +400,7 @@ class PropagatorAST:
 
 		all_atoms = set()
 		for var in first_atom.vars:
-			all_atoms.update(self.var_to_atom.atoms_by_var(first_atom.atom_type, var))
-
+			all_atoms.update(VarLocToAtom.atoms_by_var(first_atom.atom_type, first_atom.varinfo_for_var(var)))
 
 		for ground_atom in all_atoms:
 			vars_val = self.get_vars_vals(ground_atom, first_atom.var_loc())

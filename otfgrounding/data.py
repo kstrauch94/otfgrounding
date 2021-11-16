@@ -81,6 +81,44 @@ class VarToAtom:
 
 		return atoms
 
+
+class VarLocToAtom:
+	
+	var_to_atom = {}
+		
+	@classmethod
+	def add_atom(cls, atom_type, atom, vars_vals):
+
+		for var, value in vars_vals.items():
+			if var.positions not in cls.var_to_atom:
+				cls.var_to_atom[var.positions] = {}
+
+			if (atom_type, value) not in cls.var_to_atom[var.positions]:
+				cls.var_to_atom[var.positions][atom_type, value] = set()
+
+			cls.var_to_atom[var.positions][atom_type, value].add(atom)
+
+	@classmethod
+	def atoms_by_var_val(cls, atom_type, var, val):
+		if (atom_type, val) not in cls.var_to_atom[var.positions]:
+			#print("?? ", cls.var_to_atom[var.positions])
+			return None
+
+		return cls.var_to_atom[var.positions][atom_type, val]
+
+	@classmethod
+	def atoms_by_var(cls, atom_type, var):
+		atoms = set()
+
+		for other_atom_type, val in cls.var_to_atom[var.positions]:
+			if atom_type != other_atom_type:
+				continue
+
+			atoms.update(cls.var_to_atom[var.positions][atom_type, val])
+
+		return atoms
+
+
 class AtomMapping:
 
 	lit_2_atom = {}

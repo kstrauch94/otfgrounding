@@ -39,6 +39,14 @@ class Function:
 
 		return self.var_loc_cached
 
+	def varinfo_for_var(self, var):
+		if self.var_loc_cached is None:
+			self.var_loc()
+
+		for varinfo in self.var_loc_cached:
+			if varinfo.var == var:
+				return varinfo
+
 	def eval(self, vars_val):
 		arg_str = []
 		for arg in self.args:
@@ -54,6 +62,8 @@ class Literal(Function):
 		self.sign = sign
 
 		self.atom_type = None
+
+		self.var_loc_cached = None
 
 	def assign_atom_type(self, atom_type):
 		self.atom_type = atom_type
@@ -85,7 +95,13 @@ class Literal(Function):
 		return self.function.vars
 
 	def var_loc(self):
-		return self.function.var_loc()
+		if self.var_loc_cached is None:
+			self.var_loc_cached = self.function.var_loc()
+
+			for varinfo in self.var_loc_cached:
+				varinfo.positions = tuple(varinfo.positions)
+
+		return self.var_loc_cached
 
 class Variable:
 
@@ -106,7 +122,9 @@ class Variable:
 		return str(self)
 
 	def eval(self, vars_val):
-		val = vars_val[self.var]
+		for var in vars_val:
+			if var.var == self.var:
+				val = vars_val[var]
 		try:
 			val = int(val)
 			return val
@@ -198,22 +216,6 @@ class UnaryOp:
 		raise TypeError("op not known/implemented yet!")
 	
 
-class VarInfo:
-
-	def __init__(self, var):
-		self.var = var
-
-		self.positions = []
-
-	def add_pos(self, i):
-		self.positions.insert(0,i)
-
-	def __str__(self):
-		return f"{self.var} -- {self.positions}"
-
-	def __repr__(self):
-		return str(self)
-
 class Comparison:
 
 	def __init__(self, left, op, right):
@@ -246,3 +248,20 @@ class Comparison:
 			return left > right
 
 		raise TypeError("op not known/implemented yet!")
+
+
+class VarInfo:
+
+	def __init__(self, var):
+		self.var = var
+
+		self.positions = []
+
+	def add_pos(self, i):
+		self.positions.insert(0,i)
+
+	def __str__(self):
+		return f"{self.var} -- {self.positions}"
+
+	def __repr__(self):
+		return str(self)
