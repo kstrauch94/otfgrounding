@@ -50,7 +50,7 @@ class ConstraintInspector:
 							print("ERROR???", body.sign)
 
 						print("the atom", lit)
-						print("the vars", lit.vars)
+						print("the vars", lit.variables)
 
 		#import pprint
 		#pp = pprint.PrettyPrinter()
