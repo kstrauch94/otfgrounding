@@ -83,9 +83,9 @@ class VarToAtom:
 
 
 class VarLocToAtom:
-	
+
 	var_to_atom = {}
-		
+
 	@classmethod
 	def add_atom(cls, atom_type, atom, vars_vals):
 
@@ -125,6 +125,8 @@ class AtomMapping:
 
 	atom_2_lit = {}
 
+	str_atom_2_lit = {}
+
 
 	@classmethod
 	def add(cls, symbol, sign, lit):
@@ -135,11 +137,20 @@ class AtomMapping:
 
 		cls.lit_2_atom[lit].append((symbol, sign))
 
+		cls.str_atom_2_lit[(str(symbol), sign)] = lit
 		cls.atom_2_lit[symbol, sign] = lit
 
 	@classmethod
 	def get_lit(cls, symbol, sign):
+		if (symbol, sign) not in cls.atom_2_lit:
+			return -1
 		return cls.atom_2_lit[symbol, sign]
+
+	@classmethod
+	def get_lit_from_str(cls, lit_str, sign):
+		if (lit_str, sign) not in cls.str_atom_2_lit:
+			return -1
+		return cls.str_atom_2_lit[lit_str, sign]
 
 	@classmethod
 	def get_atoms(cls, lit):
