@@ -9,6 +9,8 @@ class Function:
 
 		self.var_loc_cached = None
 
+		self.vars_cached = None
+
 	def __str__(self):
 		arg_str = []
 		for arg in self.args:
@@ -20,12 +22,14 @@ class Function:
 		return str(self)
 
 	@property
-	def vars(self):
-		vars = []
-		for arg in self.args:
-			vars += arg.vars
+	def variables(self):
+		if self.vars_cached is None:
+			vars = []
+			for arg in self.args:
+				vars += arg.variables
+			self.vars_cached = vars
 
-		return vars
+		return self.vars_cached
 
 	def var_loc(self):
 		if self.var_loc_cached is None:
@@ -50,7 +54,7 @@ class Function:
 	def eval(self, vars_val):
 		arg_str = []
 		for arg in self.args:
-			arg_str.append(str(arg.eval))
+			arg_str.append(str(arg.eval(vars_val)))
 
 		return f"{self.name}({','.join(arg_str)})"
 
@@ -65,6 +69,15 @@ class Literal(Function):
 
 		self.var_loc_cached = None
 
+		self.is_fact()
+
+	def is_fact(self):
+		self.is_fact = False
+		if self.function.name.startswith("isfact_"):
+			self.is_fact = True
+			self.function.name = self.function.name.replace("isfact_", "")
+
+
 	def assign_atom_type(self, atom_type):
 		self.atom_type = atom_type
 
@@ -76,7 +89,7 @@ class Literal(Function):
 	def args(self):
 		return self.function.args
 
-	@property	
+	@property
 	def arity(self):
 		return self.function.arity
 
@@ -91,8 +104,8 @@ class Literal(Function):
 		return str(self)
 
 	@property
-	def vars(self):
-		return self.function.vars
+	def variables(self):
+		return self.function.variables
 
 	def var_loc(self):
 		if self.var_loc_cached is None:
@@ -103,6 +116,9 @@ class Literal(Function):
 
 		return self.var_loc_cached
 
+	def eval(self, vars_val):
+		return self.function.eval(vars_val)
+
 class Variable:
 
 	def __init__(self, var):
@@ -112,7 +128,7 @@ class Variable:
 		return f"{self.var}"
 
 	@property
-	def vars(self):
+	def variables(self):
 		return [str(self.var)]
 
 	def var_loc(self):
@@ -145,7 +161,7 @@ class SymbTerm:
 		return str(self.symbterm)
 
 	@property
-	def vars(self):
+	def variables(self):
 		return []
 
 	def var_loc(self):
@@ -168,8 +184,8 @@ class BinaryOp:
 		return str(self.left) + str(self.op) + str(self.right)
 
 	@property
-	def vars(self):
-		return self.left.vars + self.right.vars
+	def variables(self):
+		return self.left.variables + self.right.variables
 
 	def var_loc(self):
 		return self.left.var_loc() + self.right.var_loc()
@@ -198,8 +214,8 @@ class UnaryOp:
 		return str(self.op) + str(self.arg)
 
 	@property
-	def vars(self):
-		return self.arg.vars
+	def variables(self):
+		return self.arg.variables
 
 	def var_loc(self):
 		return self.arg.var_loc()
@@ -214,7 +230,7 @@ class UnaryOp:
 			return -val
 
 		raise TypeError("op not known/implemented yet!")
-	
+
 
 class Comparison:
 
@@ -224,8 +240,8 @@ class Comparison:
 		self.right = right
 
 	@property
-	def vars(self):
-		return self.left.vars + self.right.vars
+	def variables(self):
+		return self.left.variables + self.right.variables
 
 	def __str__(self):
 		return str(self.left) + str(self.op) + str(self.right)
