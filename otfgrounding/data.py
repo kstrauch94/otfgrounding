@@ -45,42 +45,6 @@ class AtomTypes:
 	def contains_atom(self, name, arity):
 		return (name, arity) in self.atom_to_type
 
-class VarToAtom:
-
-	def __init__(self):
-		self.vars_to_atom = {}
-
-
-	def add_atom(self, atom_type, atom, vars_vals):
-
-		for v in vars_vals:
-			if v not in self.vars_to_atom:
-				self.vars_to_atom[v] = {}
-
-			if (atom_type, vars_vals[v]) not in self.vars_to_atom[v]:
-				self.vars_to_atom[v][atom_type, vars_vals[v]] = set()
-
-			self.vars_to_atom[v][atom_type, vars_vals[v]].add(atom)
-
-	#@profile
-	def atoms_by_var_val(self, atom_type, var, val):
-		if (atom_type, val) not in self.vars_to_atom[var]:
-			return None
-
-		return self.vars_to_atom[var][atom_type, val]
-
-
-	def atoms_by_var(self, atom_type, var):
-		atoms = set()
-
-		for other_atom_type, val in self.vars_to_atom[var]:
-			if atom_type != other_atom_type:
-				continue
-
-			atoms.update(self.vars_to_atom[var][atom_type, val])
-
-		return atoms
-
 
 class VarLocToAtom:
 

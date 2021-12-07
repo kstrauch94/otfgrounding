@@ -8,7 +8,6 @@ from collections import defaultdict
 import otfgrounding.util as util
 from otfgrounding.data import AtomMapping, AtomMap
 from otfgrounding.data import BodyType
-from otfgrounding.data import VarToAtom
 from otfgrounding.data import AtomTypes
 from otfgrounding.data import VarLocToAtom
 
@@ -37,7 +36,6 @@ class PropagatorAST:
 		self.signatures = set()
 
 		self.ground_orders = {}
-		self.ground_orders2 = {}
 
 		self.impossible_vars = {}
 
@@ -67,57 +65,14 @@ class PropagatorAST:
 			# if atom is a negative one
 			# do the order of the positive ones first and append all of the other negative ones
 			# at the end
-			#self.ground_orders[atom] = [self.slot_comparisons(self.order_with_starter(atom, [a for a in self.body_parts[BodyType.pos_atom] if a != atom], set(atom.variables.copy())),
-			#												  self.body_parts[BodyType.dom_comparison],
-			#												  atom.variables.copy())
-			#							, [neg_atom for neg_atom in self.body_parts[BodyType.neg_atom] if neg_atom != atom]]
 
+			order = self.order_with_starter_and_containment(atom,
+															[a for a in self.body_parts[BodyType.pos_atom] if a != atom],
+															set(atom.variables.copy()))
 
-			order = self.order_with_starter_and_containment(atom, [a for a in self.body_parts[BodyType.pos_atom] if a != atom], set(atom.variables.copy()))
 			order = self.slot_comparisons(order, self.body_parts[BodyType.dom_comparison], atom.variables.copy())
 
 			self.ground_orders[atom] = [order, [neg_atom for neg_atom in self.body_parts[BodyType.neg_atom] if neg_atom != atom]]
-
-			print("2 ", self.ground_orders2)
-			print("1 ", self.ground_orders)
-
-	def order_with_starter(self, starter, rest, seen_vars):
-		if rest == []:
-			return []
-
-		counts = {}
-		for atom in rest:
-			for var in atom.variables:
-				if var not in counts:
-					counts[var] = 0
-				counts[var] += 1
-
-		for var in seen_vars:
-			if var in counts:
-				counts[var] -= 1
-
-
-		best_atom = None
-		best_val = None
-		for atom in rest:
-			val = 0
-			for v in atom.variables:
-				val += counts[v]
-
-			if best_val is None:
-				best_val = val
-				best_atom = atom
-
-			else:
-				if val < best_val:
-					best_val = val
-					best_atom = atom
-
-		new_rest = [a for a in rest if a != best_atom]
-
-		seen_vars.update(best_atom.variables)
-
-		return [([],best_atom)] + self.order_with_starter(best_atom, new_rest, seen_vars)
 
 	def order_with_starter_and_containment(self, starter, rest, seen_vars):
 		if rest == []:
@@ -239,6 +194,7 @@ class PropagatorAST:
 
 		for lit in lits:
 			init.add_watch(lit)
+		util.Count.add(f"watches {self.id}", len(lits))
 
 		print("Init is DONE")
 
@@ -271,12 +227,9 @@ class PropagatorAST:
 
 						is_unit = False
 
-						#print("############grounding on id", self.id, ground_atom)
-						#print(order)
 						with util.Timer(f"ground-{self.id}-{str(atom_object)}"):
 							if self.ground(order[0], order[1], ng, assignments, is_unit, control) is None:
 								return None
-						#print("DONE G")
 
 	#@util.Count("ground")
 	def ground(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control):
