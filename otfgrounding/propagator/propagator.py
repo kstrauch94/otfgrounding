@@ -6,7 +6,7 @@ from typing import Dict, List, Any, OrderedDict, Set
 from collections import defaultdict
 
 import otfgrounding.util as util
-from otfgrounding.data import AtomMapping, AtomMap
+from otfgrounding.data import AtomMapping
 from otfgrounding.data import BodyType
 from otfgrounding.data import AtomTypes
 from otfgrounding.data import VarLocToAtom
@@ -26,8 +26,6 @@ class PropagatorAST:
 
 		PropagatorAST.amt += 1
 		self.id = PropagatorAST.amt
-
-		self.var_to_atom = VarToAtom()
 
 		self.atom_types = AtomTypes()
 
@@ -73,6 +71,8 @@ class PropagatorAST:
 			order = self.slot_comparisons(order, self.body_parts[BodyType.dom_comparison], atom.variables.copy())
 
 			self.ground_orders[atom] = [order, [neg_atom for neg_atom in self.body_parts[BodyType.neg_atom] if neg_atom != atom]]
+
+		print(self.ground_orders)
 
 	def order_with_starter_and_containment(self, starter, rest, seen_vars):
 		if rest == []:
@@ -132,6 +132,7 @@ class PropagatorAST:
 
 		my_comp = comparisons[:]
 
+		to_remove = []
 		for containment, atom in new_order:
 			for c in my_comp:
 				if set(c.variables).issubset(avail_vars):
@@ -139,7 +140,9 @@ class PropagatorAST:
 					# the next atom to ground
 					containment.append(c)
 
-					my_comp.remove(c)
+					to_remove.append(c)
+			my_comp = [c for c in my_comp if c not in to_remove]
+			to_remove = []
 
 			# Once we have appended all the comparison use the next atom
 			# to ground to update the avail vars for the next run
@@ -181,11 +184,9 @@ class PropagatorAST:
 				AtomMapping.add(ground_atom.symbol, sign, lit)
 				lits.add(lit)
 
-				#self.var_to_atom.add_atom(atom_type, ground_atom.symbol, self.get_vars_vals(ground_atom.symbol, var_locs))
 
 				VarLocToAtom.add_atom(atom_type, ground_atom.symbol, self.get_vars_vals(ground_atom.symbol, var_locs))
 
-		#pp.pprint(self.var_to_atom.vars_to_atom)
 		#pp.pprint(AtomMapping.atom_2_lit)
 		#pp.pprint(AtomMapping.str_atom_2_lit)
 
@@ -206,29 +207,27 @@ class PropagatorAST:
 					name = ground_atom.name
 					arity = len(ground_atom.arguments)
 
+					# this part is here to check that the atom is relevant
+					# to the constraint handled by this propagator
 					if not self.atom_types.contains_atom(name, arity):
 						continue
 
 					atom_type = self.atom_types.get_type(name, arity)
 
 					for atom_object in self.atom_types.get_atom(atom_type):
-						#print("ao ", atom_object)
-						if atom_object.sign != sign:
-							continue
 						if atom_object.is_fact:
 							continue
-
-
-						order = self.ground_orders[atom_object]
-
-						ng = [c]
-
-						assignments = self.get_vars_vals(ground_atom, atom_object.var_loc())
-
-						is_unit = False
+						if atom_object.sign != sign:
+							continue
 
 						with util.Timer(f"ground-{self.id}-{str(atom_object)}"):
-							if self.ground(order[0], order[1], ng, assignments, is_unit, control) is None:
+
+							if self.ground(self.ground_orders[atom_object][0],
+											self.ground_orders[atom_object][1],
+							 				[c],
+											self.get_vars_vals(ground_atom, atom_object.var_loc()),
+											False,
+											control) is None:
 								return None
 
 	#@util.Count("ground")
@@ -418,7 +417,6 @@ class PropagatorAST:
 			if var.var not in atom.variables:
 				continue
 
-			#atoms = self.var_to_atom.atoms_by_var_val(atom.atom_type, var, val)
 			atoms = VarLocToAtom.atoms_by_var_val(atom.atom_type, atom.varinfo_for_var(var.var), val)
 			#print(atoms)
 

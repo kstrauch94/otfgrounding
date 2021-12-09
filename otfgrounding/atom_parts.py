@@ -51,6 +51,29 @@ class Function:
 			if varinfo.var == var:
 				return varinfo
 
+	def match(self, term, assignment, bound_vars):
+		# see if the atom matches the grounded atom, if a var is
+		# not present in the assignment, it extends the assignment with
+		# the value the of the grounded atom
+		# when extending the assignment, it also adds the var to
+		# bound_vars so that later on you have the information on which
+		# vars were bounded by this match call and UNDO the extensions
+
+        if term.type != SymbolType.Function:
+            return False
+
+        if self.arity != len(term.arguments):
+            return False
+
+        if self.name != term.name:
+            return False
+
+        for a, b in zip(self.args, term.arguments):
+            if not a.match(b, assignment, bound_vars):
+                return False
+
+        return True
+
 	def eval(self, vars_val):
 		arg_str = []
 		for arg in self.args:
@@ -122,30 +145,37 @@ class Literal(Function):
 class Variable:
 
 	def __init__(self, var):
-		self.var = var
+		self.name = var
 
 	def __str__(self):
-		return f"{self.var}"
+		return f"{self.name}"
 
 	@property
 	def variables(self):
-		return [str(self.var)]
+		return [str(self.name)]
 
 	def var_loc(self):
-		return [VarInfo(self.var)]
+		return [VarInfo(self.name)]
 
 	def __repr__(self):
 		return str(self)
 
 	def eval(self, vars_val):
 		for var in vars_val:
-			if var.var == self.var:
+			if var.name == self.name:
 				val = vars_val[var]
 		try:
 			val = int(val)
 			return val
 		except ValueError:
 			return val
+
+	def match(self, term, assignment, bound_vars):
+        if self.name in assignment:
+            return term == assignment[self.name]
+        assignment[self.name] = term
+        bound_vars.append(self.name)
+        return True
 
 class SymbTerm:
 
@@ -172,6 +202,9 @@ class SymbTerm:
 
 	def eval(self, vars_val):
 		return self.symbterm
+
+    def match(self, term, assignment, bound_vars):
+        return self.symbterm == term
 
 class BinaryOp:
 
