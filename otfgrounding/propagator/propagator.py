@@ -16,42 +16,16 @@ from otfgrounding.atom_parts import Literal
 
 import logging
 
+class Constraint:
 
-class PropagatorAST:
-
-	amt = 0
-
-	def __init__(self, body_parts):
-		self.logger = logging.getLogger(self.__module__ + "." + self.__class__.__name__)
-
-		PropagatorAST.amt += 1
-		self.id = PropagatorAST.amt
-
-		self.atom_types = AtomTypes()
-
+	def __init__(self, body_parts) -> None:
 		self.body_parts = body_parts
-
-		self.signatures = set()
 
 		self.ground_orders = {}
 
-		self.impossible_vars = {}
+		self.all_atoms = self.body_parts[BodyType.pos_atom] + self.body_parts[BodyType.neg_atom]
 
-		for atom in self.body_parts[BodyType.pos_atom]:
-			self.signatures.add((1, atom))
-
-			atom_type = self.atom_types.add(atom)
-			atom.assign_atom_type(atom_type)
-
-		for atom in self.body_parts[BodyType.neg_atom]:
-			self.signatures.add((-1, atom))
-
-			atom_type = self.atom_types.add(atom)
-			atom.assign_atom_type(atom_type)
-
-		all_atoms = self.body_parts[BodyType.pos_atom] + self.body_parts[BodyType.neg_atom]
-
-		for atom in all_atoms:
+		for atom in self.all_atoms:
 			if atom.is_fact:
 				continue
 			# build an order on the positive atoms
@@ -151,84 +125,63 @@ class PropagatorAST:
 
 		return new_order
 
-	def get_vars_vals(self, ground_atom_symbol, var_locs):
 
-		vars_vals = {}
-		for var in var_locs:
-			ground_atom_args = ground_atom_symbol
-			for loc in var.positions:
-				ground_atom_args = ground_atom_args.arguments[loc]
+class PropagatorAST:
 
-			vars_vals[var] = str(ground_atom_args)
+	amt = 0
 
-		return vars_vals
+	def __init__(self, constraints):
+		self.logger = logging.getLogger(self.__module__ + "." + self.__class__.__name__)
+
+		self.constraints = constraints
+
+		self.watches = {}
+
+		self.domains = {}
 
 	@util.Timer("Time to init")
 	def init(self, init):
 		print("starting init")
-		import pprint
-		pp = pprint.PrettyPrinter()
-		self.lits = set()
 
-		lits = set()
+		for index, constraint in enumerate(self.constraints):
+			for atom in constraint.all_atoms:
+				self.domains[(atom.name, atom.arity)] = {}
+				# if atom is a fact still add it to the domains but do not add watches or anything like that
+				if atom.is_fact:
+					continue
+				for symb_atom in init.symbolic_atoms.by_signature(atom.name, atom.arity):
+					solver_lit = init.solver_literal(symb_atom.literal) * atom.sign
+					watch = (index, symb_atom.symbol, atom)
+					self.watches.setdefault(solver_lit, []).append(watch)
 
-		for sign, atom in self.signatures:
-			name, arity = atom.name, atom.arity
-			atom_type = self.atom_types.get_type(name, arity)
+		
+		for (name, arity), atoms in self.domains.items():
+			for symb_atom in init.symbolic_atoms.by_signature(name, arity):
+				atoms[symb_atom.symbol] = init.solver_literal(symb_atom.literal)
 
-			var_locs = atom.var_loc()
-
-			for ground_atom in init.symbolic_atoms.by_signature(name, arity):
-
-				lit = init.solver_literal(ground_atom.literal) * sign
-				AtomMapping.add(ground_atom.symbol, sign, lit)
-				lits.add(lit)
-
-
-				VarLocToAtom.add_atom(atom_type, ground_atom.symbol, self.get_vars_vals(ground_atom.symbol, var_locs))
-
-		#pp.pprint(AtomMapping.atom_2_lit)
-		#pp.pprint(AtomMapping.str_atom_2_lit)
-
-		# TODO: do a function that "builds" the watches so I dont watch every single Literal
-		# TODO: also, do a sort of mini propagation here
-
-		for lit in lits:
+		for lit in self.watches.keys():
 			init.add_watch(lit)
-		util.Count.add(f"watches {self.id}", len(lits))
+
+		util.Count.add("watches", len(self.watches.keys()))
 
 		print("Init is DONE")
 
 	@util.Count("Propagate")
+	@util.Timer("Propagate")
 	def propagate(self, control, changes):
-		with util.Timer("Propagation-{}".format(str(self.id))):
-			for c in changes:
-				for ground_atom, sign in AtomMapping.get_atoms(c):
-					name = ground_atom.name
-					arity = len(ground_atom.arguments)
-
-					# this part is here to check that the atom is relevant
-					# to the constraint handled by this propagator
-					if not self.atom_types.contains_atom(name, arity):
-						continue
-
-					atom_type = self.atom_types.get_type(name, arity)
-
-					for atom_object in self.atom_types.get_atom(atom_type):
-						if atom_object.is_fact:
-							continue
-						if atom_object.sign != sign:
-							continue
-
-						with util.Timer(f"ground-{self.id}-{str(atom_object)}"):
-
-							if self.ground(self.ground_orders[atom_object][0],
-											self.ground_orders[atom_object][1],
-							 				[c],
-											self.get_vars_vals(ground_atom, atom_object.var_loc()),
-											False,
-											control) is None:
-								return None
+		for c in changes:
+			for index, symbol, atom in self.watches[c]:
+				ground_order = self.constraints[index].ground_orders[atom]
+				with util.Timer(f"ground"):
+					assignment = {}
+					atom.match(symbol, assignment, []),
+					if self.ground(ground_order[0],
+									ground_order[1],
+									[c],
+									assignment,
+									False,
+									control) is None:
+						return None
 
 	#@util.Count("ground")
 	def ground(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control):
@@ -238,6 +191,7 @@ class PropagatorAST:
 			if order_neg == []:
 				# if we got here it means we found a unit or conflicting nogood and we should add it to the solver
 				if not control.add_nogood(current_ng) or not control.propagate():
+					#print("adding constraint", current_assignment)
 					return None
 
 				return 1
@@ -253,6 +207,8 @@ class PropagatorAST:
 
 
 		contained, next_lit = order_pos[0]
+		contained_lit_added = 0
+		
 		for atom in contained:
 			if isinstance(atom, Comparison):
 				result = self.match_comparison(atom, current_assignment)
@@ -263,16 +219,22 @@ class PropagatorAST:
 
 
 			if isinstance(atom, Literal):
+				#print("contained lit")
+				#print(current_assignment)
+				#print(atom)
 				lit = self.match_contained_literal(atom, current_assignment)
 
 				new_is_unit = self.test_lit_truth_val(lit, is_unit, control)
 				if new_is_unit is None:
+					for i in range(contained_lit_added):
+						current_ng.pop()
 					return 1
 
 				# update is_unit and append the lit to the current_ng
 				is_unit = new_is_unit
 
 				current_ng.append(lit)
+				contained_lit_added += 1
 
 		# after finishing the contained atoms ground the next lit
 
@@ -289,37 +251,53 @@ class PropagatorAST:
 		if isinstance(next_lit, Literal):
 			#print("next: ", next_lit)
 			#print(current_assignment)
-			for match, lit, new_is_unit in self.get_next_lits(next_lit, current_assignment, is_unit, control):
+			domain = self.domains[next_lit.signature()]
+			for symb in domain:
+				bound = []
+				if next_lit.match(symb, current_assignment, bound):
+					#print("match ", symb)
+					lit = domain[symb]
+					new_is_unit = self.test_lit_truth_val(lit, is_unit, control)
+					if new_is_unit is None:
+						for var in bound:
+							del current_assignment[var]
+						continue
 
-				if match is None:
-					#print("cont")
-					continue
-				#print("match ", match)
-				# getting here means lit is true or the first unassigned one
-				vars_vals = self.get_vars_vals(match, next_lit.var_loc())
-				for k, v in current_assignment.items():
-					vars_vals[k] = v
+					# update is_unit and append the lit to the current_ng
+					is_unit = new_is_unit
 
-				if self.ground(order_pos[1:],
-							order_neg,
-							current_ng + [lit],
-							vars_vals,
-							new_is_unit,
-							control) is None:
+					current_ng.append(lit)
 
-					return None
-		#print("pos returnin 1")
+					if self.ground(order_pos[1:],
+								order_neg,
+								current_ng,
+								current_assignment,
+								new_is_unit,
+								control) is None:
+
+						return None
+					
+					current_ng.pop()
+
+				for var in bound:
+					del current_assignment[var]
+		
+		# pop the added contained lits
+		for i in range(contained_lit_added):
+			current_ng.pop()
 		return 1
 
 	def match_contained_literal(self, literal, assignment):
 
 		literal_string = literal.eval(assignment)
 
-		lit = AtomMapping.get_lit_from_str(literal_string, literal.sign)
-		#symb = parse_term(literal_string)
-		#lit = AtomMapping.get_lit(symb, literal.sign)
-
-		return lit
+		#lit = AtomMapping.get_lit_from_str(literal_string, literal.sign)
+		symb = parse_term(literal_string)
+		
+		if symb not in self.domains[literal.signature()]:
+			return -1
+		
+		return self.domains[literal.signature()][symb] * literal.sign
 
 	def ground_neg(self, order_neg, current_ng, current_assignment, is_unit, control):
 		# if we are here we have to deal with the negative atoms
@@ -330,37 +308,21 @@ class PropagatorAST:
 		# function could just craft a "symbol" although it might be slow
 		# converting a string to a symbol is slow
 		# maybe its actually faster to use the intersection thing
-		"""
-		next_lit = order_neg[0]
-		for match, lit, new_is_unit in self.get_next_lits(next_lit, current_assignment, is_unit, control):
-			if match is None:
-				#this means that the positive atom does not exist and hence
-				# the negative one is true
-				new_ng = current_ng
-			else:
-				new_ng = current_ng + [lit]
-
-			if self.ground([],
-						order_neg[1:],
-						new_ng,
-						current_assignment,
-						new_is_unit,
-						control) is None:
-				return None
-
-		return 1
-		"""
+		neg_lit_added = 0
 		for literal in order_neg:
 			lit = self.match_contained_literal(literal, current_assignment)
 
 			new_is_unit = self.test_lit_truth_val(lit, is_unit, control)
 			if new_is_unit is None:
+				for i in range(neg_lit_added):
+					current_ng.pop()
 				return 1
 
 			# update is_unit and append the lit to the current_ng
 			is_unit = new_is_unit
 
 			current_ng.append(lit)
+			neg_lit_added += 1
 
 		if self.ground([],
 					[],
@@ -370,28 +332,10 @@ class PropagatorAST:
 					control) is None:
 			return None
 
+		for i in range(len(order_neg)):
+			current_ng.pop()
+
 		return 1
-
-	#@profile
-	def get_next_lits(self, next_atom, current_assignment, is_unit, control):
-		#print("get lits")
-		matches = self.match_pos_atom(next_atom, current_assignment)
-		#print("match count: ", len(matches))
-		if len(matches) == 0:
-			yield None, 0, is_unit
-			return
-
-		for match in matches:
-			# for every match
-			# grab lit of match
-			new_is_unit = is_unit
-			lit = AtomMapping.atom_2_lit[match, next_atom.sign]
-
-			new_is_unit = self.test_lit_truth_val(lit, is_unit, control)
-			if new_is_unit is None:
-				continue
-
-			yield match, lit, new_is_unit
 
 	def test_lit_truth_val(self, lit, is_unit, control):
 		# return value is either None of bool
@@ -408,89 +352,32 @@ class PropagatorAST:
 
 		return is_unit
 
-	@util.Timer("Time to match pos atom")
-	#@profile
-	def match_pos_atom(self, atom, assignment):
-		atom_sets = []
-
-		for var, val in assignment.items():
-			if var.var not in atom.variables:
-				continue
-
-			atoms = VarLocToAtom.atoms_by_var_val(atom.atom_type, atom.varinfo_for_var(var.var), val)
-			#print(atoms)
-
-			if atoms is None:
-				# if there is no atoms for a particular variable then the conflict cant exist
-				# maybe have an internal data structure that keeps track of "impossible" variables?
-				# if there is a propagation step with an impossible variable just do nothing
-				# maybe also "unwatch" all atoms that have this impossible variables
-				return set()
-
-			atom_sets.append(atoms)
-		"""
-		no_atoms_in_assignment = True
-
-		for k in assignment:
-			if k.var in atom.variables:
-				no_atoms_in_assignment = False
-				break
-
-		if no_atoms_in_assignment:
-			if len(atom_sets) == 0:
-				all_atoms = set()
-				for var in atom.variables:
-					all_atoms.update(VarLocToAtom.atoms_by_var(atom.atom_type, atom.varinfo_for_var(var)))
-				return all_atoms
-
-
-
-		atoms = set()
-		var_locs = atom.var_loc()
-		for symbol, sign in AtomMapping.atom_2_lit.keys():
-			if sign != atom.sign or symbol.name != atom.name or len(symbol.arguments) != atom.arity:
-				continue
-
-			for k, v in self.get_vars_vals(symbol, var_locs).items():
-				if k in assignment:
-					no_atoms_in_assignment = False
-					if v == assignment[k]:
-						atoms.add(symbol)
-
-		return atoms
-		"""
-
-		# this part here handles when an atom has no variables in the assignment
-		if len(atom_sets) == 0:
-			all_atoms = set()
-			for var in atom.variables:
-				all_atoms.update(VarLocToAtom.atoms_by_var(atom.atom_type, atom.varinfo_for_var(var)))
-			return all_atoms
-
-		with util.Timer("intersection"):
-			sec = set.intersection(*atom_sets)
-
-		return sec
-
 	@util.Timer("Time to match Comparison")
 	def match_comparison(self, comparison, assignment):
 		return comparison.eval(assignment)
 
 	@util.Timer("Time to Check")
 	def check(self, control):
-		first_atom = self.body_parts[BodyType.pos_atom][0]
-		order = self.ground_orders[first_atom]
+		#print("check start")
+		for constraint in self.constraints:
+			first_atom = constraint.body_parts[BodyType.pos_atom][0]
+			#print(first_atom)
+			order = constraint.ground_orders[first_atom]
+			#print("using ", first_atom, order)
+			#print(first_atom.signature())
+			domain = self.domains[first_atom.signature()]
+			#print(domain)
 
-		all_atoms = set()
-		for var in first_atom.variables:
-			all_atoms.update(VarLocToAtom.atoms_by_var(first_atom.atom_type, first_atom.varinfo_for_var(var)))
+			for ground_atom in domain:
+				#print(f"check {ground_atom}")
+				assignment = {}
+				first_atom.match(ground_atom, assignment, [])
 
-		for ground_atom in all_atoms:
-			vars_val = self.get_vars_vals(ground_atom, first_atom.var_loc())
+				lit = domain[ground_atom]
+				if control.assignment.is_false(lit):
+					continue
 
-			lit = AtomMapping.get_lit(ground_atom, first_atom.sign)
-			if control.assignment.is_false(lit):
-				continue
-
-			if self.ground(order[0], order[1], [lit], vars_val, False, control) is None:
-				return None
+				if self.ground(order[0], order[1], [lit], assignment, False, control) is None:
+					return None
+		
+		#print("Check succesful")

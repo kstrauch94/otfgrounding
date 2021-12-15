@@ -1,4 +1,5 @@
-
+from clingo.symbol import SymbolType
+from clingo import Number
 
 class Function:
 
@@ -6,8 +7,6 @@ class Function:
 		self.name = name
 		self.args = args
 		self.arity = len(args)
-
-		self.var_loc_cached = None
 
 		self.vars_cached = None
 
@@ -31,26 +30,6 @@ class Function:
 
 		return self.vars_cached
 
-	def var_loc(self):
-		if self.var_loc_cached is None:
-			vars = []
-			for i, arg in enumerate(self.args):
-				for v in arg.var_loc():
-					v.add_pos(i)
-					vars.append(v)
-
-			self.var_loc_cached = vars
-
-		return self.var_loc_cached
-
-	def varinfo_for_var(self, var):
-		if self.var_loc_cached is None:
-			self.var_loc()
-
-		for varinfo in self.var_loc_cached:
-			if varinfo.var == var:
-				return varinfo
-
 	def match(self, term, assignment, bound_vars):
 		# see if the atom matches the grounded atom, if a var is
 		# not present in the assignment, it extends the assignment with
@@ -59,25 +38,25 @@ class Function:
 		# bound_vars so that later on you have the information on which
 		# vars were bounded by this match call and UNDO the extensions
 
-        if term.type != SymbolType.Function:
-            return False
+		if term.type != SymbolType.Function:
+			return False
 
-        if self.arity != len(term.arguments):
-            return False
+		if self.arity != len(term.arguments):
+			return False
 
-        if self.name != term.name:
-            return False
+		if self.name != term.name:
+			return False
 
-        for a, b in zip(self.args, term.arguments):
-            if not a.match(b, assignment, bound_vars):
-                return False
+		for a, b in zip(self.args, term.arguments):
+			if not a.match(b, assignment, bound_vars):
+				return False
 
-        return True
+		return True
 
-	def eval(self, vars_val):
+	def eval(self, assignment):
 		arg_str = []
 		for arg in self.args:
-			arg_str.append(str(arg.eval(vars_val)))
+			arg_str.append(str(arg.eval(assignment)))
 
 		return f"{self.name}({','.join(arg_str)})"
 
@@ -85,62 +64,36 @@ class Function:
 class Literal(Function):
 
 	def __init__(self, function, sign) -> None:
-		self.function = function
+		super().__init__(function.name, function.args)
 		self.sign = sign
 
 		self.atom_type = None
 
-		self.var_loc_cached = None
-
 		self.is_fact()
+
+	def signature(self):
+		return self.name, self.arity
 
 	def is_fact(self):
 		self.is_fact = False
-		if self.function.name.startswith("isfact_"):
+		if self.name.startswith("isfact_"):
 			self.is_fact = True
-			self.function.name = self.function.name.replace("isfact_", "")
+			self.name = self.name.replace("isfact_", "")
 
 
 	def assign_atom_type(self, atom_type):
 		self.atom_type = atom_type
 
-	@property
-	def name(self):
-		return self.function.name
-
-	@property
-	def args(self):
-		return self.function.args
-
-	@property
-	def arity(self):
-		return self.function.arity
-
 	def __str__(self):
 		if self.sign == 1:
-			return str(self.function)
+			return super().__str__()
 
 		elif self.sign == -1:
-			return "not " + str(self.function)
+			return "not " + super().__str__()
 
 	def __repr__(self):
 		return str(self)
 
-	@property
-	def variables(self):
-		return self.function.variables
-
-	def var_loc(self):
-		if self.var_loc_cached is None:
-			self.var_loc_cached = self.function.var_loc()
-
-			for varinfo in self.var_loc_cached:
-				varinfo.positions = tuple(varinfo.positions)
-
-		return self.var_loc_cached
-
-	def eval(self, vars_val):
-		return self.function.eval(vars_val)
 
 class Variable:
 
@@ -160,32 +113,27 @@ class Variable:
 	def __repr__(self):
 		return str(self)
 
-	def eval(self, vars_val):
-		for var in vars_val:
-			if var.name == self.name:
-				val = vars_val[var]
-		try:
-			val = int(val)
-			return val
-		except ValueError:
-			return val
+	def eval(self, assignment):
+		return assignment[self.name]
 
 	def match(self, term, assignment, bound_vars):
-        if self.name in assignment:
-            return term == assignment[self.name]
-        assignment[self.name] = term
-        bound_vars.append(self.name)
-        return True
+		if self.name in assignment:
+			return term == assignment[self.name]
+		assignment[self.name] = term
+		bound_vars.append(self.name)
+		return True
 
 class SymbTerm:
 
 	def __init__(self, symbterm):
-		if hasattr(symbterm, "number"):
+		"""if hasattr(symbterm, "number"):
 			self.symbterm = symbterm.number
 		elif hasattr(symbterm, "string"):
 			self.symbterm = symbterm.string
 		else:
-			self.symbterm = str(symbterm)
+			self.symbterm = str(symbterm)"""
+
+		self.symbterm = symbterm
 
 	def __str__(self):
 		return str(self.symbterm)
@@ -200,11 +148,14 @@ class SymbTerm:
 	def __repr__(self):
 		return str(self)
 
+	def match(self, term):
+		return term == self.symbterm
+
 	def eval(self, vars_val):
 		return self.symbterm
 
-    def match(self, term, assignment, bound_vars):
-        return self.symbterm == term
+	def match(self, term, assignment, bound_vars):
+		return self.symbterm == term
 
 class BinaryOp:
 
@@ -226,14 +177,14 @@ class BinaryOp:
 	def __repr__(self):
 		return str(self)
 
-	def eval(self, vars_val):
+	def eval(self, assignment):
 		# both sides have to be integers!!
-		left = int(self.left.eval(vars_val))
-		right = int(self.right.eval(vars_val))
+		left = self.left.eval(assignment)
+		right = self.right.eval(assignment)
 
 		if self.op == "-":
 			# check types!
-			return left - right
+			return left.number - right.number
 
 		raise TypeError("op not known/implemented yet!")
 
@@ -256,11 +207,11 @@ class UnaryOp:
 	def __repr__(self):
 		return str(self)
 
-	def eval(self, vars):
+	def eval(self, assignment):
 		# term has to be a var or term integers!!
-		val = int(self.arg.eval(vars))
+		val = self.arg.eval(assignment).number
 		if self.op == "-":
-			return -val
+			return Number(-val)
 
 		raise TypeError("op not known/implemented yet!")
 
@@ -282,9 +233,9 @@ class Comparison:
 	def __repr__(self):
 		return str(self)
 
-	def eval(self, vars_val):
-		left = self.left.eval(vars_val)
-		right = self.right.eval(vars_val)
+	def eval(self, assignment):
+		left = self.left.eval(assignment)
+		right = self.right.eval(assignment)
 
 		if type(left) != type(right):
 			raise TypeError(f"Types dont coincide for left {left} {type(left)} and right {right} {type(right)} {type(self.right)}")
@@ -297,20 +248,3 @@ class Comparison:
 			return left > right
 
 		raise TypeError("op not known/implemented yet!")
-
-
-class VarInfo:
-
-	def __init__(self, var):
-		self.var = var
-
-		self.positions = []
-
-	def add_pos(self, i):
-		self.positions.insert(0,i)
-
-	def __str__(self):
-		return f"{self.var} -- {self.positions}"
-
-	def __repr__(self):
-		return str(self)
