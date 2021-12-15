@@ -54,33 +54,34 @@ class VarLocToAtom:
 	def add_atom(cls, atom_type, atom, vars_vals):
 
 		for var, value in vars_vals.items():
-			if var.positions not in cls.var_to_atom:
-				cls.var_to_atom[var.positions] = {}
+			#if var.positions not in cls.var_to_atom:
+			#	cls.var_to_atom[var.positions] = {}
 
-			if (atom_type, value) not in cls.var_to_atom[var.positions]:
-				cls.var_to_atom[var.positions][atom_type, value] = set()
+			if (var.positions, atom_type, value) not in cls.var_to_atom:
+				cls.var_to_atom[var.positions, atom_type, value] = set()
 
-			cls.var_to_atom[var.positions][atom_type, value].add(atom)
+			cls.var_to_atom[var.positions, atom_type, value].add(atom)
 
 	@classmethod
 	def atoms_by_var_val(cls, atom_type, var, val):
-		if (atom_type, val) not in cls.var_to_atom[var.positions]:
+		if (var.positions, atom_type, val) not in cls.var_to_atom:
 			#print("?? ", cls.var_to_atom[var.positions])
 			return None
 
-		return cls.var_to_atom[var.positions][atom_type, val]
+		return cls.var_to_atom[var.positions, atom_type, val]
 
 	@classmethod
 	def atoms_by_var(cls, atom_type, var):
 		atoms = set()
 
-		for other_atom_type, val in cls.var_to_atom[var.positions]:
+		for positions, other_atom_type, val in cls.var_to_atom:
 			if atom_type != other_atom_type:
 				continue
 
-			atoms.update(cls.var_to_atom[var.positions][atom_type, val])
+			atoms.update(cls.var_to_atom[positions, atom_type, val])
 
 		return atoms
+
 
 
 class AtomMapping:
@@ -88,6 +89,7 @@ class AtomMapping:
 	lit_2_atom = {}
 
 	atom_2_lit = {}
+
 
 	str_atom_2_lit = {}
 
@@ -103,6 +105,7 @@ class AtomMapping:
 
 		cls.str_atom_2_lit[(str(symbol), sign)] = lit
 		cls.atom_2_lit[symbol, sign] = lit
+
 
 	@classmethod
 	def get_lit(cls, symbol, sign):
@@ -120,50 +123,3 @@ class AtomMapping:
 	def get_atoms(cls, lit):
 
 		return cls.lit_2_atom[lit]
-
-class AtomMap:
-
-	lit_2_atom = {}
-
-	atom_2_lit = {}
-
-
-	@classmethod
-	def add(cls, symbol, lit):
-		#print(symbol)
-		name =  symbol.name
-		args = [str(a) for a in symbol.arguments]
-		arity = len(args)
-
-		if lit not in cls.lit_2_atom:
-			cls.lit_2_atom[lit] = []
-		cls.lit_2_atom[lit].append(g_atom(name, arity, args))
-
-		if not cls.check(name, arity):
-			cls.atom_2_lit[name, arity] = {}
-
-		last = cls.atom_2_lit[name, arity]
-		for i in range(0, arity):
-
-			str_arg = str(args[i])
-
-			if i == arity-1:
-				last[str_arg] = lit
-
-			else:
-				if str_arg not in last:
-					last[str_arg] = {}
-
-			last = last[str_arg]
-
-	@classmethod
-	def add_by_var(cls, symbol, lit, vars):
-		name =  symbol.name
-		args = [str(a) for a in symbol.arguments]
-		arity = len(args)
-
-
-
-	@classmethod
-	def check(cls, name, arity):
-		return (name, arity) in cls.atom_2_lit
