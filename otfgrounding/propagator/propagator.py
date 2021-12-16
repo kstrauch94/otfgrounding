@@ -16,6 +16,27 @@ from otfgrounding.atom_parts import Literal
 
 import logging
 
+class Memoize:
+	def __init__(self, fn):
+		self.fn = fn
+		self.memo = {}
+	def __call__(self, *args):
+		new_args = []
+		for i, arg in enumerate(args):
+			if type(arg) == dict:
+				new_args.append(tuple(arg.items()))
+			else:
+				new_args.append(arg)
+		new_args = tuple(new_args)
+		if new_args not in self.memo:
+			self.memo[new_args] = self.fn(*args)
+		return self.memo[new_args]
+
+@Memoize
+def convert_str_to_lit(lit_str, sign):
+	util.Count.add("str to lit")
+	return AtomMapping.get_lit(parse_term(lit_str), sign)
+
 
 class PropagatorAST:
 
@@ -315,11 +336,8 @@ class PropagatorAST:
 
 		literal_string = literal.eval(assignment)
 
-		lit = AtomMapping.get_lit_from_str(literal_string, literal.sign)
-		#symb = parse_term(literal_string)
-		#lit = AtomMapping.get_lit(symb, literal.sign)
-
-		return lit
+		#lit = AtomMapping.get_lit_from_str(literal_string, literal.sign)
+		return convert_str_to_lit(literal_string, literal.sign)
 
 	def ground_neg(self, order_neg, current_ng, current_assignment, is_unit, control):
 		# if we are here we have to deal with the negative atoms
@@ -410,6 +428,7 @@ class PropagatorAST:
 
 	@util.Timer("Time to match pos atom")
 	#@profile
+	@Memoize
 	def match_pos_atom(self, atom, assignment):
 		atom_sets = []
 
@@ -468,6 +487,7 @@ class PropagatorAST:
 			return all_atoms
 
 		with util.Timer("intersection"):
+			util.Count.add("intersections made")
 			sec = set.intersection(*atom_sets)
 
 		return sec
