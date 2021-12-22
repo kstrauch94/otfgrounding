@@ -1,4 +1,5 @@
-
+from clingo import Number
+from clingo import Function as ClingoFunction
 
 class Function:
 
@@ -9,7 +10,19 @@ class Function:
 
 		self.var_loc_cached = None
 
+		self.var_to_loc = {}
+		self.loc_to_var = {}
+
 		self.vars_cached = None
+
+	def score(self, vars):
+		new_vars = len(set(self.variables).difference(vars)) # the new vars the atom would add
+		old_vars = len(set(self.variables).intersection(vars)) + 1
+
+		return 1000 * (new_vars / old_vars)
+
+	def signature(self):
+		return self.name, self.arity
 
 	def __str__(self):
 		arg_str = []
@@ -41,6 +54,12 @@ class Function:
 
 			self.var_loc_cached = vars
 
+
+			for var in self.var_loc_cached:
+				var.positions = tuple(var.positions)
+				self.var_to_loc[var.var] = var.positions
+				self.loc_to_var[var.positions] = var.var
+
 		return self.var_loc_cached
 
 	def varinfo_for_var(self, var):
@@ -52,72 +71,38 @@ class Function:
 				return varinfo
 
 	def eval(self, vars_val):
-		arg_str = []
-		for arg in self.args:
-			arg_str.append(str(arg.eval(vars_val)))
+		#args = []
+		#for arg in self.args:
+		#	args.append(arg.eval(vars_val))
 
-		return f"{self.name}({','.join(arg_str)})"
+		return ClingoFunction(self.name, [arg.eval(vars_val) for arg in self.args])
 
+	def var_on_pos(self, pos):
+		return self.args[pos[0]].var_on_pos(pos[1:])
 
 class Literal(Function):
 
 	def __init__(self, function, sign) -> None:
-		self.function = function
+		super().__init__(function.name, function.args)
 		self.sign = sign
-
-		self.atom_type = None
-
-		self.var_loc_cached = None
 
 		self.is_fact()
 
 	def is_fact(self):
 		self.is_fact = False
-		if self.function.name.startswith("isfact_"):
+		if self.name.startswith("isfact_"):
 			self.is_fact = True
-			self.function.name = self.function.name.replace("isfact_", "")
-
-
-	def assign_atom_type(self, atom_type):
-		self.atom_type = atom_type
-
-	@property
-	def name(self):
-		return self.function.name
-
-	@property
-	def args(self):
-		return self.function.args
-
-	@property
-	def arity(self):
-		return self.function.arity
+			self.name = self.name.replace("isfact_", "")
 
 	def __str__(self):
 		if self.sign == 1:
-			return str(self.function)
+			return super().__str__()
 
 		elif self.sign == -1:
-			return "not " + str(self.function)
+			return "not " + super().__str__()
 
 	def __repr__(self):
 		return str(self)
-
-	@property
-	def variables(self):
-		return self.function.variables
-
-	def var_loc(self):
-		if self.var_loc_cached is None:
-			self.var_loc_cached = self.function.var_loc()
-
-			for varinfo in self.var_loc_cached:
-				varinfo.positions = tuple(varinfo.positions)
-
-		return self.var_loc_cached
-
-	def eval(self, vars_val):
-		return self.function.eval(vars_val)
 
 class Variable:
 
@@ -140,22 +125,19 @@ class Variable:
 	def eval(self, vars_val):
 		for var in vars_val:
 			if var.var == self.name:
-				val = vars_val[var]
-		try:
-			val = int(val)
-			return val
-		except ValueError:
-			return val
+				return vars_val[var]
+			
+		raise RuntimeError("Assignment does not have variable {} {}".format(vars_val, self.name))
+
+	def var_on_pos(self, pos):
+		if not pos:
+			# if pos is empty tuple
+			return self.name
 
 class SymbTerm:
 
 	def __init__(self, symbterm):
-		if hasattr(symbterm, "number"):
-			self.symbterm = symbterm.number
-		elif hasattr(symbterm, "string"):
-			self.symbterm = symbterm.string
-		else:
-			self.symbterm = str(symbterm)
+		self.symbterm = symbterm
 
 	def __str__(self):
 		return str(self.symbterm)
@@ -172,6 +154,9 @@ class SymbTerm:
 
 	def eval(self, vars_val):
 		return self.symbterm
+
+	def var_on_pos(self, pos):
+		raise RuntimeError("Looking for a var on a position that has a term")
 
 class BinaryOp:
 
@@ -195,12 +180,12 @@ class BinaryOp:
 
 	def eval(self, vars_val):
 		# both sides have to be integers!!
-		left = int(self.left.eval(vars_val))
-		right = int(self.right.eval(vars_val))
+		left = self.left.eval(vars_val)
+		right = self.right.eval(vars_val)
 
 		if self.op == "-":
 			# check types!
-			return left - right
+			return Number(left.number - right.number)
 
 		raise TypeError("op not known/implemented yet!")
 
@@ -227,7 +212,7 @@ class UnaryOp:
 		# term has to be a var or term integers!!
 		val = int(self.arg.eval(vars))
 		if self.op == "-":
-			return -val
+			return Number(-val.number)
 
 		raise TypeError("op not known/implemented yet!")
 

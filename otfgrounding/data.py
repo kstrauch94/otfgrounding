@@ -1,84 +1,60 @@
 from enum import Enum
 from collections import namedtuple
-
-g_atom = namedtuple("g_atom", ["name", "arity", "args"])
+from otfgrounding import util
+from clingo import SymbolType
 
 class BodyType(Enum):
 	pos_atom = 1
 	neg_atom = -1
 	dom_comparison = 5
 
+@profile
+def value_on_term_position(symbol, pos):
+	new_s = symbol
+	for p in pos:
+		new_s = symbol.arguments[p]
 
-class AtomTypes:
-
-	def __init__(self):
-		self.atom_to_type = {}
-		self.type_to_atom = {}
-
-		self.type_count = 0
-
-	def add(self, atom):
-
-		name, arity = atom.name, atom.arity
-
-		if (name, arity) not in self.atom_to_type:
-			self.atom_to_type[name, arity] = self.type_count
-
-			self.type_to_atom[self.type_count] = [atom]
-
-			self.type_count += 1
-
-			return self.type_count - 1
-
-		else:
-			atom_type = self.atom_to_type[name, arity]
-			self.type_to_atom[atom_type].append(atom)
-
-			return atom_type
-
-	def get_type(self, name, arity):
-		return self.atom_to_type[name, arity]
-
-	def get_atom(self, atom_type):
-		return self.type_to_atom[atom_type]
-
-	def contains_atom(self, name, arity):
-		return (name, arity) in self.atom_to_type
-
+	return new_s
 
 class VarLocToAtom:
 
 	var_to_atom = {}
 
 	@classmethod
-	def add_atom(cls, atom_type, atom, vars_vals):
-
+	def add_atom(cls, atom, vars_vals):
+		# atom here is a Symbol object
 		for var, value in vars_vals.items():
-			#if var.positions not in cls.var_to_atom:
-			#	cls.var_to_atom[var.positions] = {}
 
-			if (var.positions, atom_type, value) not in cls.var_to_atom:
-				cls.var_to_atom[var.positions, atom_type, value] = set()
-
-			cls.var_to_atom[var.positions, atom_type, value].add(atom)
+			cls.var_to_atom.setdefault((var.positions, atom.name, len(atom.arguments), value), set()).add(atom)
 
 	@classmethod
-	def atoms_by_var_val(cls, atom_type, var, val):
-		if (var.positions, atom_type, val) not in cls.var_to_atom:
-			#print("?? ", cls.var_to_atom[var.positions])
-			return None
+	@util.Timer("build index")
+	@util.Count("using the index")
+	def atoms_by_var_val(cls, atom, var, value):
+		if (var.positions, atom.name, atom.arity, value) not in cls.var_to_atom:
+			util.Count.add("Building the thing")
+			for symbol in AtomMapping.atom_2_lit[atom.name, atom.arity].keys():
+				if value_on_term_position(symbol, var.positions) == value:
+					cls.var_to_atom.setdefault((var.positions, atom.name, atom.arity, value), set()).add(symbol)
 
-		return cls.var_to_atom[var.positions, atom_type, val]
+
+			if (var.positions, atom.name, atom.arity, value) not in cls.var_to_atom:
+				util.Count.add("found no atoms")
+				cls.var_to_atom[var.positions, atom.name, atom.arity, value] = None
+			else:
+				util.Count.add("found atoms!")
+
+		return cls.var_to_atom[var.positions, atom.name, atom.arity, value]
 
 	@classmethod
-	def atoms_by_var(cls, atom_type, var):
+	def atoms_by_var(cls, atom, var):
 		atoms = set()
 
-		for positions, other_atom_type, val in cls.var_to_atom:
-			if atom_type != other_atom_type:
+		for positions, other_atom_name, other_atom_arity, val in cls.var_to_atom:
+			if (atom.name, atom.arity) != (other_atom_name, other_atom_arity):
 				continue
 
-			atoms.update(cls.var_to_atom[positions, atom_type, val])
+			atoms.update(cls.var_to_atom[positions, other_atom_name, other_atom_arity, val])
 
 		return atoms
 
@@ -86,40 +62,17 @@ class VarLocToAtom:
 
 class AtomMapping:
 
-	lit_2_atom = {}
-
 	atom_2_lit = {}
 
+	@classmethod
+	def add(cls, signature, symbol, lit):
 
-	str_atom_2_lit = {}
-
+		cls.atom_2_lit.setdefault(signature, {})[symbol] = lit
 
 	@classmethod
-	def add(cls, symbol, sign, lit):
-		#print(symbol)
-
-		if lit not in cls.lit_2_atom:
-			cls.lit_2_atom[lit] = []
-
-		cls.lit_2_atom[lit].append((symbol, sign))
-
-		cls.str_atom_2_lit[(str(symbol), sign)] = lit
-		cls.atom_2_lit[symbol, sign] = lit
-
-
-	@classmethod
-	def get_lit(cls, symbol, sign):
-		if (symbol, sign) not in cls.atom_2_lit:
+	def get_lit(cls, signature, symbol):
+		if signature not in cls.atom_2_lit:
 			return -1
-		return cls.atom_2_lit[symbol, sign]
-
-	@classmethod
-	def get_lit_from_str(cls, lit_str, sign):
-		if (lit_str, sign) not in cls.str_atom_2_lit:
+		if symbol not in cls.atom_2_lit[signature]:
 			return -1
-		return cls.str_atom_2_lit[lit_str, sign]
-
-	@classmethod
-	def get_atoms(cls, lit):
-
-		return cls.lit_2_atom[lit]
+		return cls.atom_2_lit[signature][symbol]

@@ -34,7 +34,10 @@ class ConstraintInspector:
 						# then its a comparison literal
 						args = self.inspect_comparison(body)
 
-						self.body_parts[BodyType.dom_comparison].append(Comparison(*args))
+						comp = Comparison(*args)
+						self.body_parts[BodyType.dom_comparison].append(comp)
+
+						print("the comp", comp)
 
 					elif body.atom.ast_type == ASTType.SymbolicAtom:
 
