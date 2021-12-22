@@ -8,7 +8,7 @@ class BodyType(Enum):
 	neg_atom = -1
 	dom_comparison = 5
 
-@profile
+#@profile
 def value_on_term_position(symbol, pos):
 	new_s = symbol
 	for p in pos:
@@ -34,8 +34,10 @@ class VarLocToAtom:
 		if (var.positions, atom.name, atom.arity, value) not in cls.var_to_atom:
 			util.Count.add("Building the thing")
 			for symbol in AtomMapping.atom_2_lit[atom.name, atom.arity].keys():
-				if value_on_term_position(symbol, var.positions) == value:
-					cls.var_to_atom.setdefault((var.positions, atom.name, atom.arity, value), set()).add(symbol)
+				#if value_on_term_position(symbol, var.positions) == value:
+					#cls.var_to_atom.setdefault((var.positions, atom.name, atom.arity, value), set()).add(symbol)
+				val = value_on_term_position(symbol, var.positions)
+				cls.var_to_atom.setdefault((var.positions, atom.name, atom.arity, val), set()).add(symbol)
 
 
 			if (var.positions, atom.name, atom.arity, value) not in cls.var_to_atom:
