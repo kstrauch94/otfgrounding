@@ -1,5 +1,6 @@
 from clingo import Number
 from clingo import Function as ClingoFunction
+from clingo import SymbolType
 
 class Function:
 
@@ -80,6 +81,29 @@ class Function:
 	def var_on_pos(self, pos):
 		return self.args[pos[0]].var_on_pos(pos[1:])
 
+	def match(self, term, assignment, bound_vars):
+		# see if the atom matches the grounded atom, if a var is
+		# not present in the assignment, it extends the assignment with
+		# the value the of the grounded atom
+		# when extending the assignment, it also adds the var to
+		# bound_vars so that later on you have the information on which
+		# vars were bounded by this match call and UNDO the extensions
+
+		if term.type != SymbolType.Function:
+			return False
+
+		if self.arity != len(term.arguments):
+			return False
+
+		if self.name != term.name:
+			return False
+
+		for a, b in zip(self.args, term.arguments):
+			if not a.match(b, assignment, bound_vars):
+				return False
+
+		return True
+
 class Literal(Function):
 
 	def __init__(self, function, sign) -> None:
@@ -134,6 +158,14 @@ class Variable:
 			# if pos is empty tuple
 			return self.name
 
+	def match(self, term, assignment, bound_vars):
+		if self.name in assignment:
+			return term == assignment[self.name]
+		assignment[self.name] = term
+		bound_vars.append(self.name)
+		return True
+
+
 class SymbTerm:
 
 	def __init__(self, symbterm):
@@ -157,6 +189,9 @@ class SymbTerm:
 
 	def var_on_pos(self, pos):
 		raise RuntimeError("Looking for a var on a position that has a term")
+
+	def match(self, term, assignment, bound_vars):
+		return self.symbterm == term
 
 class BinaryOp:
 
@@ -184,10 +219,18 @@ class BinaryOp:
 		right = self.right.eval(vars_val)
 
 		if self.op == "-":
-			# check types!
 			return Number(left.number - right.number)
+		
+		elif self.op == "+":
+			return Number(left.number + right.number)
 
-		raise TypeError("op not known/implemented yet!")
+		elif self.op == "*":
+			return Number(left.number * right.number)
+
+		elif self.op == "/":
+			return Number(left.number / right.number)
+
+		raise TypeError(f"op {self.op} not known/implemented yet!")
 
 class UnaryOp:
 
