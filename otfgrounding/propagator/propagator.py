@@ -55,18 +55,21 @@ class Constraint:
 															[a for a in self.body_parts[BodyType.pos_atom] if a != atom],
 															set(atom.variables.copy()))
 
-			print("slotting comparisons:", self.body_parts[BodyType.dom_comparison])
-			order = self.slot_comparisons(order, self.body_parts[BodyType.dom_comparison], atom.variables.copy())
+			print("slotting comparisons and neg atoms:", self.body_parts[BodyType.dom_comparison], self.body_parts[BodyType.neg_atom])
+			order = self.slot_atoms(order, self.body_parts[BodyType.dom_comparison] + self.body_parts[BodyType.neg_atom], atom.variables.copy())
 			print(order)
 
-			self.ground_orders[atom] = [order, [neg_atom for neg_atom in self.body_parts[BodyType.neg_atom] if neg_atom != atom]]
+			self.ground_orders[atom] = order
 
 		print(self.ground_orders)
 
 
 	def order_with_starter_and_containment(self, starter, rest, seen_vars):
+		# returns a list of (atom, bool) pairs where the bool indicated
+		# whether or not the variables in the atom are alrady contained in the 
+		# assignment by that point
 		if rest == []:
-			return [([], None)]
+			return [(None, False)]
 
 		contained = []
 		for atom in rest:
@@ -76,14 +79,14 @@ class Constraint:
 		new_rest = [a for a in rest if a not in contained]
 
 		if new_rest == []:
-			return [(contained, None)]
+			return [(contained_atom, True) for contained_atom in contained] + [(None, False)]
 
 		#new_rest, best_atom = self.get_new_rest_counts(new_rest, seen_vars)
 		new_rest, best_atom = self.new_rest_by_score(new_rest, seen_vars)
 
 		seen_vars.update(best_atom.variables)
 
-		return [(contained, best_atom)] + self.order_with_starter_and_containment(best_atom, new_rest, seen_vars)
+		return [(contained_atom, True) for contained_atom in contained] + [(best_atom, False)] + self.order_with_starter_and_containment(best_atom, new_rest, seen_vars)
 
 	def new_rest_by_score(self, new_rest, seen_vars):
 
@@ -103,63 +106,33 @@ class Constraint:
 
 		return [a for a in new_rest if a != best_atom], best_atom
 		
-
-	def new_rest_counts(self, new_rest, seen_vars):
-		# uses the amount of atoms the variables in the atom will affect when instantiated
-		#e.g. given a the atoms o(B,N,M)
-		counts = {}
-		for atom in new_rest:
-			for var in atom.variables:
-				if var not in counts:
-					counts[var] = 0
-				counts[var] += 1
-
-		for var in seen_vars:
-			if var in counts:
-				counts[var] -= 1
-
-
-		best_atom = None
-		best_val = None
-		for atom in new_rest:
-			val = 0
-			for v in atom.variables:
-				val += counts[v]
-
-			if best_val is None:
-				best_val = val
-				best_atom = atom
-
-			else:
-				if val < best_val:
-					best_val = val
-					best_atom = atom
-
-		return [a for a in new_rest if a != best_atom], best_atom
-
-	def slot_comparisons(self, order, comparisons, starter_vars):
+	def slot_atoms(self, order, atoms_to_slot, starter_vars):
 		print("using ", order, "to slot")
-		if comparisons == []:
+		if atoms_to_slot == []:
 			return order
 
 		avail_vars = set(starter_vars.copy())
 
-		new_order = order.copy()
+		new_order = []
 
-		my_comp = comparisons.copy()
+		my_atoms = atoms_to_slot.copy()
 
 		to_remove = []
-		for containment, atom in new_order:
+		for atom, contained in order:
+			if contained:
+				new_order.append((atom, contained))
+				continue
 			print("checking for slotting with ", avail_vars)
-			for c in my_comp:
+			
+			for c in my_atoms:
 				if set(c.variables).issubset(avail_vars):
 					# can slot comparison for the avail vars BEFORE using
 					# the next atom to ground
-					containment.append(c)
+					new_order.append((c, True))
 					print("slotted ", c)
 
 					to_remove.append(c)
-			my_comp = [c for c in my_comp if c not in to_remove]
+			my_atoms = [c for c in my_atoms if c not in to_remove]
 			to_remove = []
 
 			# Once we have appended all the comparison use the next atom
@@ -169,7 +142,10 @@ class Constraint:
 				avail_vars.update(atom.variables)
 			else:
 				print("atom is None", None)
-			print("left comps after slotting here", my_comp)
+
+			new_order.append((atom, contained))
+
+			print("left atoms after slotting here", my_atoms)
 
 		return new_order
 
@@ -215,7 +191,6 @@ class PropagatorAST:
 
 		
 		for (name, arity, atom) in domains:
-			var_locs = atom.var_loc()
 			for symb_atom in init.symbolic_atoms.by_signature(name, arity):
 				solver_lit = init.solver_literal(symb_atom.literal)
 				AtomMapping.add(atom.signature(), symb_atom.symbol, solver_lit)
@@ -237,97 +212,78 @@ class PropagatorAST:
 				for cindex, symbol, atom in self.watches[c]:
 					#print(f"\n\nstarting prop with atom {atom}")
 					with util.Timer(f"ground-prop"):
-
-						if self.ground(self.constraints[cindex].ground_orders[atom][0],
-										self.constraints[cindex].ground_orders[atom][1],
+						assignment = {}
+						atom.match(symbol, assignment, [])
+						if self.ground(self.constraints[cindex].ground_orders[atom],
 										[c],
-										self.get_vars_vals(symbol, atom.var_loc()),
+										assignment,
 										False,
 										control) is None:
 							return 
 					#print("ending prop\n\n")
 
-	#@util.Count("ground")
-	def ground(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control):
-		if order_pos == []:
-			# do stuff with negative atoms
-			if order_neg == []:
-				# if we got here it means we found a unit or conflicting nogood and we should add it to the solver
-				if not control.add_nogood(current_ng) or not control.propagate():
-					return None
-
-				return 1
-
-			return self.ground_neg(order_neg, current_ng, current_assignment, is_unit, control)
-
-
-		return self.ground_pos(order_pos, order_neg, current_ng, current_assignment, is_unit, control)
-
 	#@profile
-	def ground_pos(self, order_pos, order_neg, current_ng, current_assignment, is_unit, control):
+	def ground(self, order, nogood, assignment, is_unit, control):
 
-
-
-		contained, next_lit = order_pos[0]
-		for atom in contained:
-			if isinstance(atom, Comparison):
-				#print(f"matching a comparsion {atom}")
-				result = self.match_comparison(atom, current_assignment)
-				#print(current_assignment)
-				#print(atom, result)
-				if result == False:
-					return 1
-
-
-			if isinstance(atom, Literal):
-				#print("match contained ", atom, current_assignment)
-				lit = self.match_contained_literal(atom, current_assignment)
-				#print("lit result:", lit)
-
-				new_is_unit = self.test_lit_truth_val(lit, is_unit, control)
-				if new_is_unit is None:
-					#print(" new is unit none")
-					return 1
-
-				# update is_unit and append the lit to the current_ng
-				is_unit = new_is_unit
-
-				current_ng.append(lit)
-
-		# after finishing the contained atoms ground the next lit
-
+		next_lit, contained = order[0]	
 		if next_lit is None:
-			# if the next lit is None we can continue to ground the negative atoms
-			if self.ground(order_pos[1:],
-						order_neg,
-						current_ng,
-						current_assignment,
-						is_unit,
-						control) is None:
-
+			# we have reached the end and it is time to add the nogoogd
+			if not control.add_nogood(nogood) or not control.propagate():
+				#print("adding constraint", assignment)
 				return None
-		if isinstance(next_lit, Literal):
+
+		elif contained:
+			if isinstance(next_lit, Comparison):
+				#print(f"matching a comparsion {atom}")
+				#print(assignment)
+				#print(atom, result)
+
+				# evaluate comparison -> should return true or false
+				if next_lit.eval(assignment):
+					if self.ground(order[1:], nogood, assignment, is_unit, control) is None:
+						return None
+
+			else:
+				lit = self.match_contained_literal(next_lit, assignment)
+				lit_val = control.assignment.value(lit)
+				if lit_val == False:
+					return 1
+					
+				if not (lit_val is None and is_unit):
+					# only the new lit can be unassigned
+					nogood.append(lit)
+					if self.ground(order[1:], nogood, assignment, is_unit or lit_val is None, control) is None:
+						return None
+					nogood.pop()
+
+		else:
+			# atom here has to be positive and not contained
+
 			#print("next: ", next_lit)
-			#print(current_assignment)
-			for match, lit, new_is_unit in self.get_next_lits(next_lit, current_assignment, is_unit, control):
+			#print(assignment)
+			for match in self.match_pos_atom(next_lit, assignment):
 				
-				if match is None:
-					#print("all matches foundcont")
-					continue
 				#print("match ", match)
 				# getting here means lit is true or the first unassigned one
-				vars_vals = self.get_vars_vals(match, next_lit.var_loc())
-				for k, v in current_assignment.items():
-					vars_vals[k] = v
+				bound = []
+				lit = AtomMapping.atom_2_lit[next_lit.signature()][match]
+				# don't have to multiply lit by sign since it should always be positive atom
 
-				if self.ground(order_pos[1:],
-							order_neg,
-							current_ng + [lit],
-							vars_vals,
-							new_is_unit,
-							control) is None:
+				lit_val = control.assignment.value(lit)
+				if lit_val == False:
+					return 1
+				if not (lit_val is None and is_unit):
 
-					return None
+					next_lit.match(match, assignment, bound)
+					nogood.append(lit)
+
+					if self.ground(order[1:], nogood, assignment, is_unit or lit_val is None, control) is None:
+						return None
+					
+					nogood.pop()
+					for var in bound:
+						del assignment[var]
+
 		#print("matches all for ", next_lit)
 		return 1
 
@@ -337,88 +293,26 @@ class PropagatorAST:
 		#print(type(literal.eval(assignment)))
 		return AtomMapping.get_lit(literal.signature(), literal.eval(assignment)) * literal.sign
 
-	def ground_neg(self, order_neg, current_ng, current_assignment, is_unit, control):
-		# if we are here we have to deal with the negative atoms
-
-		for literal in order_neg:
-			lit = self.match_contained_literal(literal, current_assignment)
-
-			new_is_unit = self.test_lit_truth_val(lit, is_unit, control)
-			if new_is_unit is None:
-				return 1
-
-			# update is_unit and append the lit to the current_ng
-			is_unit = new_is_unit
-
-			current_ng.append(lit)
-
-		if self.ground([],
-					[],
-					current_ng,
-					current_assignment,
-					is_unit,
-					control) is None:
-			return None
-
-		return 1
-
-	#@profile
-	@util.Timer("get-next-lits")
-	def get_next_lits(self, next_atom, current_assignment, is_unit, control):
-		#print("get lits")
-		matches = self.match_pos_atom(next_atom, current_assignment)
-		#print("match count: ", len(matches))
-		#print(matches)
-		if len(matches) == 0:
-			yield None, 0, is_unit
-			return
-
-		for match in matches:
-			# for every match
-			# grab lit of match
-			new_is_unit = is_unit
-			lit = AtomMapping.get_lit(next_atom.signature(), match)
-
-			new_is_unit = self.test_lit_truth_val(lit, is_unit, control)
-			if new_is_unit is None:
-				continue
-			
-			#print("yielding match", match, lit)
-			yield match, lit, new_is_unit
-	@util.Timer("test-truth-val")
-	def test_lit_truth_val(self, lit, is_unit, control):
-		# return value is either None of bool
-		# if None then the nogood is useless with this literal
-		# if bool then that is the new value for is_unit
-		if control.assignment.value(lit) is None:
-			if is_unit:
-				return None
-
-			return True
-
-		elif control.assignment.is_false(lit):
-			return None
-
-		return is_unit
-
 	@util.Timer("Time to match pos atom")
 	#@profile
 	@Memoize
 	def match_pos_atom(self, atom, assignment):
 		atom_sets = []
 
+		#for var in atom.variables.intersection(assignment.keys()):
 		for var, val in assignment.items():
-			if var.var not in atom.variables:
+			if var not in atom.variables:
 				continue
 			
-			atoms = VarLocToAtom.atoms_by_var_val(atom, atom.varinfo_for_var(var.var), val)
-			#print(atoms)
+			for pos in atom.var_to_loc[var]:
+				atoms = VarLocToAtom.atoms_by_var_val(atom, pos, val)
+				#print(atoms)
 
-			if atoms is None:
-				# if there is no atoms for a particular variable then the conflict cant exist
-				return set()
+				if atoms is None:
+					# if there is no atoms for a particular variable then the conflict cant exist
+					return set()
 
-			atom_sets.append(atoms)
+				atom_sets.append(atoms)
 
 		# this part here handles when an atom has no variables in the assignment
 		if len(atom_sets) == 0:
@@ -430,12 +324,7 @@ class PropagatorAST:
 			util.Count.add("intersections made")
 			sec = set.intersection(*atom_sets)
 
-		return sec
-
-	@util.Timer("Time to match Comparison")
-	def match_comparison(self, comparison, assignment):
-		#print(comparison, comparison.eval(assignment), assignment)
-		return comparison.eval(assignment)
+		return sorted(sec)
 
 	@util.Timer("Time to Check")
 	def check(self, control):
@@ -444,11 +333,13 @@ class PropagatorAST:
 			order = constraint.ground_orders[first_atom]
 
 			for ground_atom in AtomMapping.atom_2_lit[first_atom.signature()].keys():
-				vars_val = self.get_vars_vals(ground_atom, first_atom.var_loc())
 
 				lit = AtomMapping.get_lit(first_atom.signature(), ground_atom) * first_atom.sign
 				if control.assignment.is_false(lit):
 					continue
+				
+				assignment = {}
+				first_atom.match(ground_atom, assignment, [])
 
-				if self.ground(order[0], order[1], [lit], vars_val, False, control) is None:
+				if self.ground(order, [lit], assignment, False, control) is None:
 					return None

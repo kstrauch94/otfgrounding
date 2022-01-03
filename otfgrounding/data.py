@@ -30,23 +30,24 @@ class VarLocToAtom:
 	@classmethod
 	@util.Timer("build index")
 	@util.Count("using the index")
-	def atoms_by_var_val(cls, atom, var, value):
-		if (var.positions, atom.name, atom.arity, value) not in cls.var_to_atom:
+	def atoms_by_var_val(cls, atom, var_position, value):
+		if (var_position, atom.name, atom.arity, value) not in cls.var_to_atom:
 			util.Count.add("Building the thing")
 			for symbol in AtomMapping.atom_2_lit[atom.name, atom.arity].keys():
 				#if value_on_term_position(symbol, var.positions) == value:
 					#cls.var_to_atom.setdefault((var.positions, atom.name, atom.arity, value), set()).add(symbol)
-				val = value_on_term_position(symbol, var.positions)
-				cls.var_to_atom.setdefault((var.positions, atom.name, atom.arity, val), set()).add(symbol)
+				val = value_on_term_position(symbol, var_position)
+				cls.var_to_atom.setdefault((var_position, atom.name, atom.arity, val), set()).add(symbol)
 
 
-			if (var.positions, atom.name, atom.arity, value) not in cls.var_to_atom:
+			if (var_position, atom.name, atom.arity, value) not in cls.var_to_atom:
 				util.Count.add("found no atoms")
-				cls.var_to_atom[var.positions, atom.name, atom.arity, value] = None
+				print(atom, var_position, value)
+				cls.var_to_atom[var_position, atom.name, atom.arity, value] = None
 			else:
 				util.Count.add("found atoms!")
 
-		return cls.var_to_atom[var.positions, atom.name, atom.arity, value]
+		return cls.var_to_atom[var_position, atom.name, atom.arity, value]
 
 	@classmethod
 	def atoms_by_var(cls, atom, var):

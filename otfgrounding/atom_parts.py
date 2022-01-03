@@ -16,6 +16,8 @@ class Function:
 
 		self.vars_cached = None
 
+		self.var_loc()
+
 	def score(self, vars):
 		new_vars = len(set(self.variables).difference(vars)) # the new vars the atom would add
 		old_vars = len(set(self.variables).intersection(vars)) + 1
@@ -38,9 +40,9 @@ class Function:
 	@property
 	def variables(self):
 		if self.vars_cached is None:
-			vars = []
+			vars = set()
 			for arg in self.args:
-				vars += arg.variables
+				vars.update(arg.variables)
 			self.vars_cached = vars
 
 		return self.vars_cached
@@ -56,10 +58,10 @@ class Function:
 			self.var_loc_cached = vars
 
 
-			for var in self.var_loc_cached:
-				var.positions = tuple(var.positions)
-				self.var_to_loc[var.var] = var.positions
-				self.loc_to_var[var.positions] = var.var
+			for var_info in self.var_loc_cached:
+				var_info.positions = tuple(var_info.positions)
+				self.var_to_loc.setdefault(var_info.var, []).append(var_info.positions)
+				self.loc_to_var[var_info.positions] = var_info.var
 
 		return self.var_loc_cached
 
@@ -71,12 +73,12 @@ class Function:
 			if varinfo.var == var:
 				return varinfo
 
-	def eval(self, vars_val):
+	def eval(self, assignment):
 		#args = []
 		#for arg in self.args:
 		#	args.append(arg.eval(vars_val))
 
-		return ClingoFunction(self.name, [arg.eval(vars_val) for arg in self.args])
+		return ClingoFunction(self.name, [arg.eval(assignment) for arg in self.args])
 
 	def var_on_pos(self, pos):
 		return self.args[pos[0]].var_on_pos(pos[1:])
@@ -138,7 +140,7 @@ class Variable:
 
 	@property
 	def variables(self):
-		return [str(self.name)]
+		return set(self.name)
 
 	def var_loc(self):
 		return [VarInfo(self.name)]
@@ -146,12 +148,11 @@ class Variable:
 	def __repr__(self):
 		return str(self)
 
-	def eval(self, vars_val):
-		for var in vars_val:
-			if var.var == self.name:
-				return vars_val[var]
+	def eval(self, assignment):
+		if self.name in assignment:
+			return assignment[self.name]
 			
-		raise RuntimeError("Assignment does not have variable {} {}".format(vars_val, self.name))
+		raise RuntimeError("Assignment does not have variable {} {}".format(assignment, self.name))
 
 	def var_on_pos(self, pos):
 		if not pos:
@@ -176,7 +177,7 @@ class SymbTerm:
 
 	@property
 	def variables(self):
-		return []
+		return set()
 
 	def var_loc(self):
 		return []
@@ -205,7 +206,7 @@ class BinaryOp:
 
 	@property
 	def variables(self):
-		return self.left.variables + self.right.variables
+		return self.left.variables.union(self.right.variables)
 
 	def var_loc(self):
 		return self.left.var_loc() + self.right.var_loc()
@@ -251,9 +252,9 @@ class UnaryOp:
 	def __repr__(self):
 		return str(self)
 
-	def eval(self, vars):
+	def eval(self, assignment):
 		# term has to be a var or term integers!!
-		val = int(self.arg.eval(vars))
+		val = self.arg.eval(assignment)
 		if self.op == "-":
 			return Number(-val.number)
 
@@ -269,7 +270,7 @@ class Comparison:
 
 	@property
 	def variables(self):
-		return self.left.variables + self.right.variables
+		return self.left.variables.union(self.right.variables)
 
 	def __str__(self):
 		return str(self.left) + str(self.op) + str(self.right)
@@ -277,12 +278,9 @@ class Comparison:
 	def __repr__(self):
 		return str(self)
 
-	def eval(self, vars_val):
-		left = self.left.eval(vars_val)
-		right = self.right.eval(vars_val)
-
-		if type(left) != type(right):
-			raise TypeError(f"Types dont coincide for left {left} {type(left)} and right {right} {type(right)} {type(self.right)}")
+	def eval(self, assignment):
+		left = self.left.eval(assignment)
+		right = self.right.eval(assignment)
 
 		if self.op == "=":
 			return left == right
