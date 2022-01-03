@@ -140,7 +140,7 @@ class Variable:
 
 	@property
 	def variables(self):
-		return set(self.name)
+		return set([self.name])
 
 	def var_loc(self):
 		return [VarInfo(self.name)]
