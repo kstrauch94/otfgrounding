@@ -7,7 +7,6 @@ class Function:
 	def __init__(self, name, args):
 		self.name = name
 		self.args = args
-		self.arity = len(args)
 
 		self.var_loc_cached = None
 
@@ -23,6 +22,10 @@ class Function:
 		old_vars = len(set(self.variables).intersection(vars)) + 1
 
 		return 1000 * (new_vars / old_vars)
+
+	@property
+	def arity(self):
+		return len(self.args)
 
 	def signature(self):
 		return self.name, self.arity
@@ -112,13 +115,48 @@ class Literal(Function):
 		super().__init__(function.name, function.args)
 		self.sign = sign
 
-		self.is_fact()
+		self.is_fact = None
+		self.is_temporal = None
 
-	def is_fact(self):
+		self.check_fact()
+		self.check_temporal()
+
+	def check_fact(self):
 		self.is_fact = False
 		if self.name.startswith("isfact_"):
 			self.is_fact = True
 			self.name = self.name.replace("isfact_", "")
+
+	def check_temporal(self):
+		self.is_temporal = False
+		if self.name.startswith("temporal_"):
+			self.is_temporal = True
+			self.name = self.name.replace("temporal_", "")
+
+			self.time = self.args[-1]
+			self.args = self.args[:-1]
+
+			self.assigned_time_binary_op = self.time.copy()
+
+			if isinstance(self.assigned_time_binary_op, BinaryOp):
+				if self.time.op == "-":
+						inverse = "+"
+				elif self.time.op == "+":
+					inverse = "-"
+
+				self.assigned_time_binary_op.op = inverse
+
+	def non_temporal_signature(self):
+		return self.name, self.arity + 1
+
+	def convert_to_assigned_time(self, timepoint):
+		# use this function to convert the time point given by a literal to the assigned time
+
+		return self.assigned_time_binary_op.eval({"T": timepoint})
+
+	def convert_to_normal_time(self, assigned_time):
+		# given an assigned time, return the regular time
+		return self.time.eval({"T": assigned_time})
 
 	def __str__(self):
 		if self.sign == 1:

@@ -1,7 +1,9 @@
 from enum import Enum
 from collections import namedtuple
+from typing import Sized
 from otfgrounding import util
 from clingo import SymbolType
+from clingo import Function as clingoFunction
 
 class BodyType(Enum):
 	pos_atom = 1
@@ -31,9 +33,15 @@ class VarLocToAtom:
 	@util.Timer("build index")
 	@util.Count("using the index")
 	def atoms_by_var_val(cls, atom, var_position, value):
+		
+		if atom.is_temporal:
+			mapping = TemporalAtoms.t_atom_2_t_lit
+		else:
+			mapping = AtomMapping.atom_2_lit
+
 		if (var_position, atom.name, atom.arity, value) not in cls.var_to_atom:
 			util.Count.add("Building the thing")
-			for symbol in AtomMapping.atom_2_lit[atom.name, atom.arity].keys():
+			for symbol in mapping[atom.name, atom.arity].keys():
 				#if value_on_term_position(symbol, var.positions) == value:
 					#cls.var_to_atom.setdefault((var.positions, atom.name, atom.arity, value), set()).add(symbol)
 				val = value_on_term_position(symbol, var_position)
@@ -79,3 +87,81 @@ class AtomMapping:
 		if symbol not in cls.atom_2_lit[signature]:
 			return -1
 		return cls.atom_2_lit[signature][symbol]
+
+
+class TemporalAtoms:
+
+	# temporal atom to temporal literal
+	t_atom_2_t_lit = {}
+	t_lit_2_t_atom = {}
+
+	size = 0
+
+	@classmethod
+	def add(cls, symbol):
+		
+		temporal_symbol = clingoFunction(symbol.name, symbol.arguments[:-1])
+		signature = (symbol.name, len(symbol.arguments) -1)
+		if signature not in cls.t_atom_2_t_lit:
+			cls.t_atom_2_t_lit[signature] = {}
+			
+		if temporal_symbol not in cls.t_atom_2_t_lit[signature]:
+			cls.size += 1
+			cls.t_atom_2_t_lit[signature][temporal_symbol] = cls.size
+			cls.t_lit_2_t_atom[cls.size] = temporal_symbol
+
+	@classmethod
+	def get_base_lit(cls, signature, symbol):
+		if signature not in cls.t_atom_2_t_lit:
+			raise RuntimeError(f"temporal lit should exist: {symbol}")
+		if symbol not in cls.t_atom_2_t_lit[signature]:
+			raise RuntimeError(f"temporal lit should exist: {symbol}")
+
+		return cls.atom_2_lit[signature][symbol]
+
+	@classmethod
+	def get_temporal_lit(cls, signature, symbol, timepoint):
+		temp_lit = cls.get_temporal_lit(signature, symbol)
+
+	@classmethod
+	def convert_base_lit_to_temporal_lit(cls, base_lit, timepoint):
+		return base_lit + (timepoint * cls.size)
+	
+	@classmethod
+	def convert_to_base_lit(cls, temporal_lit):
+		intermediate = temporal_lit % cls.size
+		if intermediate == 0:
+			intermediate = cls.size
+		
+		return intermediate
+
+	@classmethod
+	def convert_to_time(cls, temporal_lit):
+		return (abs(temporal_lit) - 1) // cls.size
+
+	@classmethod
+	def add_time_to_base_lit(cls, base_lit, timepoint):
+		return base_lit + (timepoint * cls.size)
+
+	@classmethod
+	def convert_temporal_lit_to_symbol(cls, temporal_lit):
+		base_lit = cls.convert_to_base_lit(temporal_lit)
+		timepoint = cls.convert_to_time(temporal_lit)
+
+		temporal_symbol = cls.t_lit_2_t_atom[base_lit]
+
+		return clingoFunction(temporal_symbol.name, temporal_symbol.arguments.append(clingo.Number(timepoint)))
+
+class TemporalAtomMapping:
+
+	lit_2_t_lit = {}
+
+	@classmethod
+	def add(cls, temporal_lit, solver_lit):
+		cls.lit_2_t_lit.setdefault(solver_lit, []).append(temporal_lit)
+
+	@classmethod
+	def get_t_lit(cls, solver_lit):
+		if solver_lit not in cls.lit_2_t_lit:
+			return []
+		return cls.lit_2_t_lit[solver_lit]
