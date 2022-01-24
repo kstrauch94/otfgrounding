@@ -1,3 +1,4 @@
+from email.mime import base
 from clingo import Function as clingoFunction
 from clingo import Number as clingoNumber
 
@@ -54,12 +55,15 @@ class Constraint:
 			# do the order of the positive ones first and append all of the other negative ones
 			# at the end
 
+			atom_vars = atom.variables.copy()
+			if atom.is_temporal:
+				atom_vars.add("T")
 			order = self.order_with_starter_and_containment(atom,
 															[a for a in self.body_parts[BodyType.pos_atom] if a != atom],
-															set(atom.variables.copy()))
+															set(atom_vars.copy()))
 
 			print("slotting comparisons and neg atoms:", self.body_parts[BodyType.dom_comparison], self.body_parts[BodyType.neg_atom])
-			order = self.slot_atoms(order, self.body_parts[BodyType.dom_comparison] + self.body_parts[BodyType.neg_atom], atom.variables.copy())
+			order = self.slot_atoms(order, self.body_parts[BodyType.dom_comparison] + self.body_parts[BodyType.neg_atom], atom_vars.copy())
 			print(order)
 
 			self.ground_orders[atom] = order
@@ -183,58 +187,57 @@ class PropagatorAST:
 	def init(self, init):
 		print("starting init")
 		domains = set()
-		temporal_domains = set()
 
 		for index, constraint in enumerate(self.constraints):
-			for atom in constraint.all_atoms:
-				if atom.is_temporal:
-					temporal_domains.add((atom.name, atom.arity))
-				else:
-					domains.add((atom.name, atom.arity))
+			for atom in constraint.all_atoms:				
+				domains.add((atom.non_temporal_signature(), atom.is_temporal))
 				# if atom is a fact still add it to the domains but do not add watches or anything like that
 
 		# first loop over atoms
 		# set all base atoms
 		with util.Timer("signature set"):
-			for (name, arity) in temporal_domains:
-				for symb_atom in init.symbolic_atoms.by_signature(atom.name, atom.arity):
-					TemporalAtoms.add(symb_atom)
+			for (name, arity), temporal in domains:
+				if not temporal:
+					continue
+				for symb_atom in init.symbolic_atoms.by_signature(name, arity):
+					TemporalAtoms.add(symb_atom.symbol)
+	
 
-		
+		to_watch = set()	
 		for index, constraint in enumerate(self.constraints):
 			for atom in constraint.all_atoms:
 				if atom.is_fact:
 					continue
 				if atom.is_temporal:
-					for symb_atom in init.symbolic_atoms.by_signature(atom.name, atom.arity):
+					for symb_atom in init.symbolic_atoms.by_signature(*atom.non_temporal_signature()):
 						solver_lit = init.solver_literal(symb_atom.literal) * atom.sign
-						temp_symb = clingoFunction(name, symb_atom.arguments[:-1])
-						base_lit = TemporalAtoms.get_base_lit(atom.signature(), temp_symb)
+						temp_symb = clingoFunction(atom.name, symb_atom.symbol.arguments[:-1])
+						base_lit = TemporalAtoms.symbol_to_base_lit(atom.signature(), temp_symb)
 						watch = (index, temp_symb, atom)
-						self.temporal_watches.setdefault(base_lit, []).append(watch)
+						self.temporal_watches.setdefault(base_lit*atom.sign, set()).add(watch)
+
+						to_watch.add(solver_lit)
+
+						timepoint = symb_atom.symbol.arguments[-1].number
+
+						temporal_lit = TemporalAtoms.base_lit_to_temporal_lit(base_lit, timepoint, atom.sign)
+						TemporalAtomMapping.add(temporal_lit, solver_lit)
 				else:
-					for symb_atom in init.symbolic_atoms.by_signature(atom.name, atom.arity):
+					for symb_atom in init.symbolic_atoms.by_signature(*atom.non_temporal_signature()):
 						solver_lit = init.solver_literal(symb_atom.literal) * atom.sign
 						watch = (index, symb_atom.symbol, atom)
 						self.watches.setdefault(solver_lit, []).append(watch)
 
-		
+						to_watch.add(solver_lit)
+
 		with util.Timer("set mappings"):
-			to_watch = set()
-			for (name, arity) in domains:
+			for (name, arity), temporal in domains:
+				if temporal:
+					continue
 				for symb_atom in init.symbolic_atoms.by_signature(name, arity):
 					solver_lit = init.solver_literal(symb_atom.literal)
 					AtomMapping.add((name, arity), symb_atom.symbol, solver_lit)
 
-					to_watch.add(solver_lit)
-
-			for (name, arity) in temporal_domains:
-				for symb_atom in init.symbolic_atoms.by_signature(name, arity+1):
-					solver_lit = init.solver_literal(symb_atom.literal)
-					temp_symb = clingoFunction(name, symb_atom.arguments[:-1])
-					TemporalAtomMapping.add((name, arity), TemporalAtoms.get_temporal_lit((name, arity), temp_symb), solver_lit)
-
-					to_watch.add(solver_lit)
 
 		for lit in to_watch:
 			init.add_watch(lit)
@@ -251,23 +254,31 @@ class PropagatorAST:
 			for c in changes:
 
 				# propagate normal watches
-				for cindex, symbol, atom in self.watches[c]:
-					#print(f"\n\nstarting prop with atom {atom}")
-					with util.Timer(f"ground-prop-normal"):
-						assignment = {}
-						atom.match(symbol, assignment, [])
-						if self.ground(self.constraints[cindex].ground_orders[atom],
-										[c],
-											assignment,
-										False,
-										control) is None:
-							return 
-					#print("ending prop\n\n")
+				if c in self.watches:
+
+					for cindex, symbol, atom in self.watches[c]:
+						util.Count.add("-----nground calls")
+						#print(f"\n\nstarting prop with atom {atom}")
+						with util.Timer(f"ground-prop-normal"):
+							assignment = {}
+							atom.match(symbol, assignment, [])
+							if self.ground(self.constraints[cindex].ground_orders[atom],
+											[c],
+												assignment,
+											False,
+											control) is None:
+								return 
+						#print("ending prop\n\n")
 				for t_lit in TemporalAtomMapping.get_t_lit(c):
-					timepoint = TemporalAtoms.convert_to_time(t_lit)
-					for cindex, temp_symbol, atom in self.temporal_watches[t_lit]:
+					s_base_lit = TemporalAtoms.temporal_lit_to_s_base_lit(t_lit)
+					if s_base_lit not in self.temporal_watches:
+						continue
+					timepoint = TemporalAtoms.temporal_lit_to_time(t_lit)
+
+					for cindex, temp_symbol, atom in self.temporal_watches[s_base_lit]:
+						util.Count.add("----ground calls")
 						with util.Timer(f"ground-prop-temporal"):
-							assignment = {"T": atom.convert_to_assigned_time(timepoint)}
+							assignment = {"T": clingoNumber(atom.convert_to_assigned_time(timepoint))}
 							atom.match(temp_symbol, assignment, [])
 							if self.ground(self.constraints[cindex].ground_orders[atom],
 											[c],
@@ -282,7 +293,8 @@ class PropagatorAST:
 
 		next_lit, contained = order[0]	
 		if next_lit is None:
-			# we have reached the end and it is time to add the nogoogd
+			# we have reached the end and it is time to add the nogoog
+			util.Count.add("Constraint added")
 			if not control.add_nogood(nogood) or not control.propagate():
 				#print("adding constraint", assignment)
 				return None
@@ -302,6 +314,7 @@ class PropagatorAST:
 				lit = self.match_contained_literal(next_lit, assignment)
 				lit_val = control.assignment.value(lit)
 				if lit_val == False:
+					#print("lit contained false", next_lit, assignment, lit)
 					return 1
 					
 				if not (lit_val is None and is_unit):
@@ -317,20 +330,21 @@ class PropagatorAST:
 			#print("next: ", next_lit)
 			#print(assignment)
 			for match in self.match_pos_atom(next_lit, assignment):
-				
-				#print("match ", match)
+				util.Count.add("------match found")
+				# print("match ", match)
 				# getting here means lit is true or the first unassigned one
 				bound = []
-				if next_lit.is_temporal:		
-					timepoint = clingoNumber(next_lit.conver_to_normal_time(assignment["T"]))
-					AtomMapping.get_lit(next_lit.non_temporal_signature(), match.arguments.append(timepoint)) * next_lit.sign
+				if next_lit.is_temporal:
+					with util.Timer("----temporal 1"):
+						timepoint = next_lit.convert_to_normal_time(assignment["T"]).number
+						lit = TemporalAtomMapping.get_lit(TemporalAtoms.symbol_to_temporal_lit(next_lit.signature(), match, timepoint, next_lit.sign))
 				else:
 					lit = AtomMapping.atom_2_lit[next_lit.signature()][match]
 				# don't have to multiply lit by sign since it should always be positive atom
 
 				lit_val = control.assignment.value(lit)
 				if lit_val == False:
-					return 1
+					continue
 				if not (lit_val is None and is_unit):
 
 					next_lit.match(match, assignment, bound)
@@ -351,9 +365,13 @@ class PropagatorAST:
 		#print(literal.eval(assignment), AtomMapping.atom_2_lit[literal.signature()])
 		#print(type(literal.eval(assignment)))
 		if literal.is_temporal:
-			eval_lit = literal.eval(assignment)
-			timepoint = clingoNumber(literal.conver_to_normal_time(assignment["T"]))
-			AtomMapping.get_lit(literal.non_temporal_signature(), eval_lit.arguments.append(timepoint)) * literal.sign
+			with util.Timer("----temporal cont"):
+				eval_lit = literal.eval(assignment)
+				timepoint = literal.convert_to_normal_time(assignment["T"]).number
+				#AtomMapping.get_lit(literal.non_temporal_signature(), eval_lit.arguments.append(timepoint)) * literal.sign
+
+				return TemporalAtomMapping.get_lit(TemporalAtoms.symbol_to_temporal_lit(literal.signature(), eval_lit, timepoint, literal.sign))
+
 		else:
 			return AtomMapping.get_lit(literal.signature(), literal.eval(assignment)) * literal.sign
 
@@ -387,23 +405,46 @@ class PropagatorAST:
 		with util.Timer("intersection"):
 			util.Count.add("intersections made")
 			sec = set.intersection(*atom_sets)
-
-		return sorted(sec)
+			if atom.is_temporal:
+				new_sec = set()
+				for temporal_atom in sec:
+					temporal_lit = TemporalAtoms.symbol_to_temporal_lit(atom.signature(), temporal_atom, atom.convert_to_normal_time(assignment["T"]).number, atom.sign)
+					if temporal_lit in TemporalAtomMapping.t_lit_2_lit:
+						new_sec.add(temporal_atom)
+				
+				sec = new_sec
+		return sec
 
 	@util.Timer("Time to Check")
+	@util.Count("checks")
 	def check(self, control):
+		#return
 		for constraint in self.constraints:
-			first_atom = constraint.body_parts[BodyType.pos_atom][0]
+
+			first_atom = list(constraint.ground_orders.keys())[0]
 			order = constraint.ground_orders[first_atom]
 
-			for ground_atom in AtomMapping.atom_2_lit[first_atom.signature()].keys():
+			if first_atom.is_temporal:
+				for ground_atom in TemporalAtoms.t_atom_2_t_lit[first_atom.signature()].keys():
+					for timepoint in range(0,100):
+						lit = TemporalAtomMapping.get_lit(TemporalAtoms.symbol_to_temporal_lit(first_atom.signature(), ground_atom, timepoint, first_atom.sign))
+						util.Count.add("atoms to try")
+						if control.assignment.is_false(lit):
+							continue
+						util.Count.add("atoms checked")
+						assignment = {"T": clingoNumber(timepoint)}
+						first_atom.match(ground_atom, assignment, [])
 
-				lit = AtomMapping.get_lit(first_atom.signature(), ground_atom) * first_atom.sign
-				if control.assignment.is_false(lit):
-					continue
-				
-				assignment = {}
-				first_atom.match(ground_atom, assignment, [])
+						if self.ground(order, [lit], assignment, False, control) is None:
+							return None
 
-				if self.ground(order, [lit], assignment, False, control) is None:
-					return None
+			else:
+				for ground_atom in AtomMapping.atom_2_lit[first_atom.signature()].keys():
+					assignment = {}
+					lit = AtomMapping.get_lit(first_atom.signature(), ground_atom) * first_atom.sign
+
+					if control.assignment.is_false(lit):
+							continue
+
+					assignment = {}
+					first_atom.match(ground_atom, assignment, [])

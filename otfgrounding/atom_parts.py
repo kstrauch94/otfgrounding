@@ -2,6 +2,8 @@ from clingo import Number
 from clingo import Function as ClingoFunction
 from clingo import SymbolType
 
+import copy
+
 class Function:
 
 	def __init__(self, name, args):
@@ -136,7 +138,7 @@ class Literal(Function):
 			self.time = self.args[-1]
 			self.args = self.args[:-1]
 
-			self.assigned_time_binary_op = self.time.copy()
+			self.assigned_time_binary_op = copy.deepcopy(self.time)
 
 			if isinstance(self.assigned_time_binary_op, BinaryOp):
 				if self.time.op == "-":
@@ -147,8 +149,8 @@ class Literal(Function):
 				self.assigned_time_binary_op.op = inverse
 
 	def non_temporal_signature(self):
-		return self.name, self.arity + 1
-
+		return self.name, self.arity + int(self.is_temporal)
+		
 	def convert_to_assigned_time(self, timepoint):
 		# use this function to convert the time point given by a literal to the assigned time
 
